@@ -213,6 +213,18 @@ function vaiA(x) {
   }, 120);
 }
 
+// ---------- TEMA chiaro / scuro ----------
+function temaScelto() { try { return localStorage.getItem('ul-tema') || 'auto'; } catch (e) { return 'auto'; } }
+function applicaTema() {
+  var t = temaScelto(), scuro = t === 'scuro' || (t === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.classList.toggle('scuro', scuro);
+  var m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', scuro ? '#0B1530' : '#E4F2FC');
+  var map = document.querySelector('#v-dispensa .map'); if (map) lineeMappa(map);
+}
+function impostaTema(t) { try { localStorage.setItem('ul-tema', t); } catch (e) {} applicaTema(); }
+applicaTema();
+if (window.matchMedia) { var mq = matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', applicaTema); }
+
 // ---------- STUDIA ----------
 function vStudia() {
   var v = $('v-studia'), m = materiaCorrente(), h = '';
@@ -235,7 +247,7 @@ function vStudia() {
   if (car.length) h += '<div class="sez">Dispense <small>' + car.length + '</small></div>';
   car.forEach(function (c) { h += cartaDispensa(c); });
   if (!car.length) h += '<div class="empty"><b>Nessuna dispensa per ' + esc(m.nome) + '</b><span>Carica il primo PDF di appunti: in circa un minuto hai capitoli spiegati, mappa a colori, fonti e domande.</span></div>';
-  h += '<div class="foot"><span>Il tuo codice: <b style="user-select:all">' + esc(S.uid) + '</b></span><button type="button" data-codice>Usa i tuoi dati su un altro telefono</button></div>';
+  h += '<div class="foot"><span class="tema" role="group" aria-label="Tema">' + [['auto', 'Automatico'], ['chiaro', 'Chiaro'], ['scuro', 'Scuro']].map(function (t) { return '<button type="button" data-tema="' + t[0] + '" class="' + (temaScelto() === t[0] ? 'on' : '') + '">' + t[1] + '</button>'; }).join('') + '</span><span>Il tuo codice: <b style="user-select:all">' + esc(S.uid) + '</b></span><button type="button" data-codice>Usa i tuoi dati su un altro telefono</button></div>';
   v.innerHTML = h;
   legaMaterie(v);
   v.querySelector('[data-ed]').onclick = function () { schedaMateria(m); };
@@ -245,6 +257,7 @@ function vStudia() {
   v.querySelector('[data-incolla]').onclick = function () { incolla(m); };
   var nb = v.querySelector('[data-notif]'); if (nb) nb.onclick = attivaNotifiche;
   v.querySelector('[data-codice]').onclick = schedaCodice;
+  v.querySelectorAll('[data-tema]').forEach(function (b) { b.onclick = function () { impostaTema(b.dataset.tema); rerender(); }; });
   v.querySelectorAll('[data-apri]').forEach(function (b) { b.onclick = function () { mostra('dispensa', b.dataset.apri); }; });
   v.querySelectorAll('[data-test]').forEach(function (b) { b.onclick = function () { avviaTest({ tipo: 'verifica', cid: b.dataset.test }); }; });
   v.querySelectorAll('[data-orale]').forEach(function (b) { b.onclick = function () { S.ultimaMateria = m.id; S.oraleCid = b.dataset.orale; salva(); mostra('orale'); }; });
@@ -308,7 +321,7 @@ function etichettaParti(p) { return p.dispensa ? '' : p.test && p.mappa ? 'Test 
 function scegliParti(nome, fatto) {
   var scelte = [['dispensa', '📘', 'Dispensa completa', 'Capitoli spiegati, fonti verificate, mappa, test e orale.'], ['test', '✅', 'Solo test', 'Domande a crocette e per l\'orale, direttamente dal testo. Ideale se è già una dispensa.'], ['mappa', '🗺️', 'Solo mappa', 'Una mappa a colori dei concetti principali.'], ['testmappa', '🧩', 'Test + mappa', 'Le due cose insieme, senza riscrivere il testo.']], sel = 'dispensa';
   var disegna = function (r) {
-    r.querySelector('#sp-opts').innerHTML = scelte.map(function (x) { var on = x[0] === sel; return '<button type="button" class="dc" data-sp="' + x[0] + '" style="flex-direction:row;align-items:center;gap:14px;text-align:left;border:2px solid ' + (on ? 'var(--blu)' : 'var(--soft)') + ';' + (on ? 'background:#F3F8FD;' : '') + 'color:var(--ink);padding:13px 14px"><span style="font-size:28px">' + x[1] + '</span><span style="flex:1"><b style="font-size:16.5px;font-family:\'Bricolage Grotesque\'">' + x[2] + '</b><br><span class="note" style="font-size:13px">' + x[3] + '</span></span><span style="flex:none;width:24px;height:24px;border-radius:50%;border:2px solid var(--blu);' + (on ? 'background:var(--blu);box-shadow:inset 0 0 0 4px #fff;' : '') + '"></span></button>'; }).join('');
+    r.querySelector('#sp-opts').innerHTML = scelte.map(function (x) { var on = x[0] === sel; return '<button type="button" class="dc" data-sp="' + x[0] + '" style="flex-direction:row;align-items:center;gap:14px;text-align:left;border:2px solid ' + (on ? 'var(--blu)' : 'var(--soft)') + ';' + (on ? 'background:var(--card2);' : '') + 'color:var(--ink);padding:13px 14px"><span style="font-size:28px">' + x[1] + '</span><span style="flex:1"><b style="font-size:16.5px;font-family:\'Bricolage Grotesque\'">' + x[2] + '</b><br><span class="note" style="font-size:13px">' + x[3] + '</span></span><span style="flex:none;width:24px;height:24px;border-radius:50%;border:2px solid var(--blu);' + (on ? 'background:var(--blu);box-shadow:inset 0 0 0 4px #fff;' : '') + '"></span></button>'; }).join('');
     r.querySelectorAll('[data-sp]').forEach(function (b) { b.onclick = function () { sel = b.dataset.sp; disegna(r); }; });
   };
   sheet('<span class="lab">' + esc(nome) + '</span><h2 style="font-size:24px">Cosa ti serve?</h2><div id="sp-opts" style="display:flex;flex-direction:column;gap:9px"></div><button class="btn" id="sp-ok">Prepara</button><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
