@@ -171,13 +171,19 @@ function aggiungiParte(x) {
   var o = {}; o[q[1]] = true; prepara(c, o);
   if (cur.view === 'dispensa') mostra('studia');
 }
+function usaCodiceNuovo(c) {
+  c = c || ('u' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36).slice(-4));
+  S = { uid: c, materie: [], caricamenti: [], risposte: {}, orali: [], creato: new Date().toISOString() };
+  JOBS = {}; SEGUO = {}; salva(); chiudiSheet(); toast('Il tuo codice ora è ' + c); mostra('studia');
+}
 function schedaCodice() {
   sheet('<h2 style="font-size:22px">Il tuo codice</h2><span style="font-size:14px">Con questo codice ritrovi materie, dispense e progressi su un altro telefono.</span><b style="font-family:\'Bricolage Grotesque\';font-size:22px;user-select:all">' + esc(S.uid) + '</b>' +
-    '<div class="field"><label for="s-cod">Usa un altro codice</label><input id="s-cod" placeholder="u…" autocomplete="off" autocapitalize="off"></div><button class="btn" id="s-usa">Passa a questo codice</button><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) {
+    '<div class="field"><label for="s-cod">Usa un altro codice</label><input id="s-cod" placeholder="u…" autocomplete="off" autocapitalize="off"></div><button class="btn" id="s-usa">Passa a questo codice</button><button class="btn ghost" id="s-nuovo" style="color:var(--blu)">Crea un codice nuovo, vuoto</button><span class="note" style="font-size:12.5px">Cambiando codice, i dati del codice di prima restano salvati: chi ha quel codice li ritrova.</span><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) {
     r.querySelector('[data-close]').onclick = chiudiSheet;
+    r.querySelector('#s-nuovo').onclick = function () { if (confirm('Crei un codice nuovo e riparti da zero su questo telefono?')) usaCodiceNuovo(); };
     r.querySelector('#s-usa').onclick = function () {
       var c = $('s-cod').value.trim().toLowerCase(); if (!/^u[a-z0-9]{8,30}$/.test(c)) return toast('Codice non valido.');
-      api('/api/dati?uid=' + c).then(function (x) { if (!x.data) return toast('Nessun dato con questo codice.'); S = x.data; S.uid = c; try { localStorage.setItem('unilampo', JSON.stringify(S)); } catch (e) {} chiudiSheet(); toast('Fatto: dati caricati'); S.caricamenti.forEach(function (k) { dispCarica(k.id).then(function () { if (cur.view === 'studia') rerender(); }); }); mostra('studia'); }).catch(function () { toast('Non riesco a controllare il codice.'); });
+      api('/api/dati?uid=' + c).then(function (x) { if (!x.data) { if (confirm('Nessun dato con il codice ' + c + '. Lo uso come tuo codice nuovo, partendo da zero?')) usaCodiceNuovo(c); return; } S = x.data; S.uid = c; try { localStorage.setItem('unilampo', JSON.stringify(S)); } catch (e) {} chiudiSheet(); toast('Fatto: dati caricati'); S.caricamenti.forEach(function (k) { dispCarica(k.id).then(function () { if (cur.view === 'studia') rerender(); }); }); mostra('studia'); }).catch(function () { toast('Non riesco a controllare il codice.'); });
     };
   });
 }
