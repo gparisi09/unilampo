@@ -70,7 +70,7 @@ function disegna(d) {
   var R = d.regole, pe = R.PREZZI[R.ECONOMICO], pc = R.PREZZI[R.COSTOSO];
   if (d.ultimoErrore) h += '<div class="box tr"><span class="t">Ultimo errore · ' + esc(quando(Date.parse(d.ultimoErrore.quando))) + '</span><b>' + esc(d.ultimoErrore.motivo) + '</b> (codice ' + esc(d.ultimoErrore.status) + ', passo ' + esc(d.ultimoErrore.passo) + ')<br><span class="note">' + esc(d.ultimoErrore.dettaglio) + '</span></div>';
   h += '<div class="card"><span class="lab">Chiave e regole di costo</span><div class="li"><span>Chiave Anthropic su Netlify</span><span class="tag' + (d.chiave ? '' : ' red') + '">' + (d.chiave ? 'presente' : 'manca') + '</span></div>' +
-    '<div class="li"><span>Chiave OpenAI (voce dell\'orale)</span><span class="tag' + (d.chiaveVoce ? '' : ' grey') + '">' + (d.chiaveVoce ? 'presente' : 'non messa') + '</span></div>' +
+    '<div class="li"><span>Voce dell\'orale</span><span class="tag' + (d.chiaveVoce ? '' : ' grey') + '">' + (d.voceGateway ? 'attiva · crediti Netlify' : d.chiaveVoce ? 'attiva · chiave OpenAI' : 'voce del telefono') + '</span></div>' +
     '<table class="est"><tr><td>Tetto giornaliero (nel codice)</td><td>' + dollari(d.tetto) + '</td></tr>' +
     '<tr><td>Modello economico<br><span class="note">' + esc(R.ECONOMICO) + ' · per milione di token</span></td><td>' + dollari(pe.in) + ' in · ' + dollari(pe.out) + ' out</td></tr>' +
     '<tr><td>Modello avanzato (solo dispense)<br><span class="note">' + esc(R.COSTOSO) + ' · per milione di token</span></td><td>' + dollari(pc.in) + ' in · ' + dollari(pc.out) + ' out</td></tr>' +

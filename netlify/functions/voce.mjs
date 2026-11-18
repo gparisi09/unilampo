@@ -1,5 +1,5 @@
 import { store, json, uidOk, aiAccesa, puoSpendere, registraSpesa, sha } from "../lib/base.mjs";
-import { URL_OPENAI, chiaveOpenAI } from "../lib/openai.mjs";
+import { urlOpenAI, chiaveOpenAI, voceGatewayOk, segnaGateway } from "../lib/openai.mjs";
 import { VOCE_MODELLO, VOCE, USD_VOCE_PER_CARATTERE } from "../lib/regole.mjs";
 
 // Voce della commissione: testo → audio con un modello vocale vero. Ogni frase resta in archivio:
@@ -18,13 +18,13 @@ export default async (req) => {
   if (c) return audio(c);
   if (!(await aiAccesa())) return json({ error: "spenta" }, 503);
   const usd = testo.length * USD_VOCE_PER_CARATTERE;
-  if (!(await puoSpendere(usd)).ok) return json({ error: "tetto" }, 429);
-  const r = await fetch(URL_OPENAI + "/audio/speech", {
+  if (!(await puoSpendere(usd)).ok || !(await voceGatewayOk(usd))) return json({ error: "tetto" }, 429);
+  const r = await fetch(urlOpenAI() + "/audio/speech", {
     method: "POST", headers: { authorization: "Bearer " + process.env.OPENAI_API_KEY, "content-type": "application/json" },
     body: JSON.stringify({ model: VOCE_MODELLO, voice: VOCE, input: testo, instructions: ISTRUZIONI, response_format: "mp3" }),
   });
   if (!r.ok) { console.error("voce", r.status, (await r.text().catch(() => "")).slice(0, 200)); return json({ error: "upstream", status: r.status }, 502); }
-  await registraSpesa("voce", usd);
+  await registraSpesa("voce", usd); await segnaGateway(usd);
   const buf = await r.arrayBuffer();
   await arch.set(k, buf).catch(() => {});
   return audio(buf);

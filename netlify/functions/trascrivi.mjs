@@ -1,5 +1,5 @@
 import { json, uidOk, aiAccesa, puoSpendere, registraSpesa } from "../lib/base.mjs";
-import { URL_OPENAI, chiaveOpenAI } from "../lib/openai.mjs";
+import { urlOpenAI, chiaveOpenAI, voceGatewayOk, segnaGateway } from "../lib/openai.mjs";
 import { TRASCRIZIONE_MODELLO, USD_TRASCRIZIONE_AL_SECONDO } from "../lib/regole.mjs";
 
 // Trascrive la risposta a voce registrata dal telefono (funziona anche su iPhone).
@@ -10,7 +10,7 @@ export default async (req) => {
   if (!uidOk(uid)) return json({ error: "bad" }, 400);
   if (!(await aiAccesa())) return json({ error: "spenta" }, 503);
   const usd = sec * USD_TRASCRIZIONE_AL_SECONDO;
-  if (!(await puoSpendere(usd)).ok) return json({ error: "tetto" }, 429);
+  if (!(await puoSpendere(usd)).ok || !(await voceGatewayOk(usd))) return json({ error: "tetto" }, 429);
   const tipo = (req.headers.get("content-type") || "audio/webm").split(";")[0];
   const buf = await req.arrayBuffer();
   if (!buf.byteLength) return json({ text: "" });
@@ -21,9 +21,9 @@ export default async (req) => {
   fd.append("model", TRASCRIZIONE_MODELLO);
   fd.append("language", "it");
   fd.append("prompt", "Risposta orale di una studentessa universitaria a un esame: termini tecnici della materia.");
-  const r = await fetch(URL_OPENAI + "/audio/transcriptions", { method: "POST", headers: { authorization: "Bearer " + process.env.OPENAI_API_KEY }, body: fd });
+  const r = await fetch(urlOpenAI() + "/audio/transcriptions", { method: "POST", headers: { authorization: "Bearer " + process.env.OPENAI_API_KEY }, body: fd });
   if (!r.ok) { console.error("trascrivi", r.status, (await r.text().catch(() => "")).slice(0, 200)); return json({ error: "upstream", status: r.status }, 502); }
-  await registraSpesa("trascrizione", usd);
+  await registraSpesa("trascrizione", usd); await segnaGateway(usd);
   const d = await r.json().catch(() => ({}));
   return json({ text: String(d.text || "").trim().slice(0, 5000) });
 };
