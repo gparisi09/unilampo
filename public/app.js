@@ -476,38 +476,82 @@ function vocePiuBella() {
   return vs.sort(function (a, b) { return rank(a) - rank(b); })[0] || null;
 }
 if ('speechSynthesis' in window) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = function () {}; }
-function parla(t) { return new Promise(function (res) { if (!('speechSynthesis' in window)) return res(); try { var u = new SpeechSynthesisUtterance(t); u.lang = 'it-IT'; u.rate = 0.98; var vv = vocePiuBella(); if (vv) u.voice = vv; u.onend = res; u.onerror = res; speechSynthesis.cancel(); speechSynthesis.speak(u); setTimeout(res, Math.min(30000, 2500 + t.length * 90)); } catch (e) { res(); } }); }
+// Voce della commissione (sintesi vocale del telefono, gratis). Su iPhone: niente cancel() prima di parlare,
+// frasi corte una alla volta (le lunghe a volte si interrompono) e prima frase dentro il tocco dell'utente.
+var IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+var usaSR = !!SR && !IOS; // su iPhone la dettatura della tastiera è più affidabile e scrive mentre parli
+function parla(t) {
+  return new Promise(function (res) {
+    if (!('speechSynthesis' in window)) return res();
+    var parti = String(t).match(/[^.!?;:]+[.!?;:]*/g) || [String(t)], i = 0, chiuso = false, tm;
+    var fine = function () { if (!chiuso) { chiuso = true; clearTimeout(tm); res(); } };
+    tm = setTimeout(fine, Math.min(45000, 3000 + String(t).length * 95));
+    var avanti = function () {
+      if (i >= parti.length) return fine();
+      var u = new SpeechSynthesisUtterance(parti[i++].trim()); u.lang = 'it-IT'; u.rate = 1; u.volume = 1;
+      var vv = vocePiuBella(); if (vv) u.voice = vv;
+      u.onend = avanti; u.onerror = avanti;
+      try { speechSynthesis.speak(u); if (speechSynthesis.paused) speechSynthesis.resume(); } catch (e) { fine(); }
+    };
+    try { if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel(); } catch (e) {}
+    avanti();
+  });
+}
 function waveOn(on) { var w = document.querySelector('#o-box .wave'); if (!w) return; clearInterval(waveOn.t); if (on) waveOn.t = setInterval(function () { w.querySelectorAll('i').forEach(function (i) { i.style.height = (6 + Math.random() * 28) + 'px'; }); }, 140); else w.querySelectorAll('i').forEach(function (i) { i.style.height = '6px'; }); }
 function chiParla(k) { [0, 1, 2].forEach(function (i) { var m = $('m' + i); if (m) m.classList.toggle('talk', i === k); }); }
 function iniziaOrale(mid, q) {
-  O = { mid: mid, q: q, storia: [], on: true, rec: null };
+  O = { mid: mid, q: q, storia: [], on: true, rec: null, ultima: q.domanda };
   var box = $('o-box');
-  box.innerHTML = '<span class="lab">Domanda</span><div class="big" style="font-size:18px">“' + esc(q.domanda) + '”</div><div class="wave">' + '<i></i>'.repeat(9) + '</div><div class="chat" id="o-chat"></div><div id="o-stato" class="note" style="text-align:center"></div>' +
+  box.innerHTML = '<span class="lab">Domanda</span><div class="big" style="font-size:19px">“' + esc(q.domanda) + '”</div>' +
+    '<div class="flex"><div class="wave" style="flex:1">' + '<i></i>'.repeat(9) + '</div><button class="btn ghost small" id="o-ria" style="color:var(--blu)">🔊 Riascolta</button></div>' +
+    '<span class="note" id="o-vol">Non senti la voce? Togli il silenzioso e alza il volume.</span>' +
+    '<div class="chat" id="o-chat"></div><div id="o-stato" class="note" style="text-align:center;font-size:14px"></div>' +
     '<button class="mic hide" id="o-mic" aria-label="Rispondi a voce"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>' +
-    '<div id="o-scrivi" class="hide"><textarea class="in" id="o-txt" rows="4" placeholder="Scrivi o detta la risposta (microfono della tastiera)"></textarea><button class="btn small" id="o-invia" style="margin-top:6px">Invia risposta</button></div>' +
+    '<div id="o-scrivi" class="hide"><label for="o-txt" id="o-lab" style="font-weight:700;font-size:14.5px;display:block;margin-bottom:6px"></label><textarea class="in" id="o-txt" rows="5"></textarea><button class="btn" id="o-invia" style="margin-top:8px;width:100%">Invia risposta</button></div>' +
     '<button class="btn ghost small" id="o-stop" style="color:var(--kob)">Interrompi</button>';
   $('o-stop').onclick = function () { fermaOrale(); vOrale(); };
-  $('o-invia').onclick = function () { var t = $('o-txt').value.trim(); if (!t) return; $('o-txt').value = ''; rispostaOrale(t); };
-  $('o-mic').onclick = function () { if (O && O.ascolto) { try { O.rec.stop(); } catch (e) {} } else ascolta(); };
-  commissione(q.domanda, 0).then(pronto);
+  $('o-ria').onclick = function () { if (!O) return; waveOn(true); parla(O.ultima).then(function () { waveOn(false); }); };
+  $('o-invia').onclick = function () { if (O && O.ascolto) { O.fermato = true; try { O.rec.stop(); } catch (e) {} return; } var t = $('o-txt').value.trim(); if (!t) return; $('o-txt').value = ''; rispostaOrale(t); };
+  $('o-mic').onclick = function () { if (O && O.ascolto) { O.fermato = true; try { O.rec.stop(); } catch (e) {} } else ascolta(); };
+  commissione(q.domanda, 0).then(pronto); // parte dentro il tocco: su iPhone la voce si sblocca così
 }
 function statoO(t) { var e = $('o-stato'); if (e) e.textContent = t; }
 function bolla(chi, t) { var c = $('o-chat'); if (!c) return; var b = document.createElement('div'); b.className = 'bub ' + (chi === 'studente' ? 's' : 'c'); b.textContent = t; c.appendChild(b); }
-function commissione(t, chi) { if (!O || !O.on) return Promise.resolve(); if (O.storia.length) bolla('commissione', t); O.storia.push({ chi: 'commissione', testo: t }); chiParla(chi || 0); statoO('Parla la commissione…'); waveOn(true); return parla(t).then(function () { waveOn(false); chiParla(-1); }); }
+function commissione(t, chi) { if (!O || !O.on) return Promise.resolve(); if (O.storia.length) bolla('commissione', t); O.storia.push({ chi: 'commissione', testo: t }); O.ultima = t; chiParla(chi || 0); statoO('Parla la commissione…'); waveOn(true); return parla(t).then(function () { waveOn(false); chiParla(-1); }); }
 function pronto() {
   if (!O || !O.on) return;
   $('o-scrivi').classList.remove('hide');
-  if (SR) { $('o-mic').classList.remove('hide'); statoO('Tocca il microfono e rispondi. Toccalo di nuovo quando hai finito.'); }
-  else statoO('Rispondi qui sotto: puoi usare il microfono della tastiera per dettare.');
+  if (usaSR) {
+    $('o-mic').classList.remove('hide'); $('o-lab').textContent = 'Quello che dici compare qui mentre parli';
+    $('o-txt').placeholder = 'Tocca il microfono e parla…';
+    statoO('Tocca il microfono e rispondi. Toccalo di nuovo quando hai finito.');
+  } else {
+    $('o-lab').textContent = 'Tocca qui sotto, poi il 🎤 della tastiera, e parla: il testo compare mentre parli.';
+    $('o-txt').placeholder = 'La tua risposta…';
+    statoO('');
+  }
 }
+// Riconoscimento vocale del browser (Chrome, Android, computer): testo dal vivo e ripartenza automatica
+// se il browser si ferma da solo durante una pausa. Si chiude solo quando tocchi di nuovo il microfono.
 function ascolta() {
-  var r = new SR(), finale = ''; O.rec = r; O.ascolto = true;
-  r.lang = 'it-IT'; r.continuous = true; r.interimResults = true;
-  var mic = $('o-mic'); mic.classList.add('rec'); statoO('Ti ascolto… tocca di nuovo per finire.'); waveOn(true);
-  r.onresult = function (e) { var temp = ''; for (var i = e.resultIndex; i < e.results.length; i++) { if (e.results[i].isFinal) finale += ' ' + e.results[i][0].transcript; else temp += e.results[i][0].transcript; } $('o-txt').value = (finale + ' ' + temp).trim(); };
-  r.onerror = function (e) { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') statoO('Il microfono è bloccato: consenti l\'accesso, oppure scrivi la risposta.'); };
-  r.onend = function () { O.ascolto = false; mic.classList.remove('rec'); waveOn(false); var t = ($('o-txt').value || finale).trim(); if (t) { $('o-txt').value = ''; rispostaOrale(t); } else statoO('Non ho sentito nulla: riprova o scrivi la risposta.'); };
-  try { r.start(); } catch (e) { O.ascolto = false; mic.classList.remove('rec'); statoO('Il riconoscimento vocale non parte: scrivi la risposta.'); }
+  var finale = '', mic = $('o-mic');
+  O.ascolto = true; O.fermato = false; mic.classList.add('rec'); waveOn(true);
+  statoO('Ti ascolto… tocca di nuovo il microfono quando hai finito.');
+  var giro = function () {
+    var r = new SR(); O.rec = r;
+    r.lang = 'it-IT'; r.continuous = true; r.interimResults = true;
+    r.onresult = function (e) { var temp = ''; for (var i = e.resultIndex; i < e.results.length; i++) { if (e.results[i].isFinal) finale += ' ' + e.results[i][0].transcript; else temp += e.results[i][0].transcript; } $('o-txt').value = (finale + ' ' + temp).replace(/\s+/g, ' ').trim(); };
+    r.onerror = function (e) { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { O.fermato = true; statoO('Il microfono è bloccato: consenti l\'accesso, oppure scrivi la risposta.'); } };
+    r.onend = function () {
+      if (O && O.on && !O.fermato) { try { giro(); } catch (x) {} return; } // pausa: riparte da solo
+      if (!O) return;
+      O.ascolto = false; mic.classList.remove('rec'); waveOn(false);
+      var t = $('o-txt').value.trim();
+      if (t) { $('o-txt').value = ''; rispostaOrale(t); } else statoO('Non ho sentito nulla: riprova o scrivi la risposta.');
+    };
+    try { r.start(); } catch (e) { O.ascolto = false; mic.classList.remove('rec'); waveOn(false); statoO('Il riconoscimento vocale non parte: scrivi la risposta.'); }
+  };
+  giro();
 }
 function rispostaOrale(t) {
   if (!O || !O.on) return;
@@ -567,7 +611,7 @@ function vOrale() {
     var c = S.oraleCid && S.caricamenti.find(function (k) { return k.id === S.oraleCid; });
     h += '<div class="card" id="o-box" style="align-items:center;text-align:center;gap:12px;padding:24px 16px"><button class="mic" id="o-go" aria-label="Inizia l\'orale"' + (AI.accesa ? '' : ' disabled') + '><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>' +
       '<b style="font-family:\'Bricolage Grotesque\';font-size:22px">Inizia l\'orale</b><span class="note" style="font-size:14px">Una domanda a caso su ' + esc(c ? c.titolo : m.nome) + '. Rispondi a voce: il voto lo decide la commissione.</span>' +
-      (c ? '<button class="linkap" id="o-tutte">usa tutta la materia</button>' : '') + notaAI() + (SR ? '' : '<span class="note">Qui il riconoscimento vocale non c\'è: risponderai scrivendo, anche con il microfono della tastiera.</span>') + '</div>';
+      (c ? '<button class="linkap" id="o-tutte">usa tutta la materia</button>' : '') + notaAI() + (usaSR ? '' : '<span class="note">Rispondi a voce con il 🎤 della tastiera: il testo compare mentre parli.</span>') + '</div>';
   }
   if (ult.length) h += '<div class="sez">Ultimi orali</div><div class="card" style="gap:8px">' + ult.map(function (o) { return '<div class="li"><span>' + esc(o.domanda.slice(0, 70)) + (o.domanda.length > 70 ? '…' : '') + '<br><span class="note">' + giornoIt(o.data) + '</span></span><b>' + (o.voto >= 18 ? o.voto + (o.lode ? 'L' : '') + '/30' : 'Non sup.') + '</b></div>'; }).join('') + '</div>';
   v.innerHTML = h;
