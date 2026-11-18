@@ -164,7 +164,7 @@ export default async (req) => {
     if (!out) {
       const r = await chiedi(chiamata);
       usd = r.usd;
-      await registraSpesa(passo, usd);
+      await registraSpesa(passo, usd, r.ricerche);
       out = { o: leggiJSON(r.text), trovate: r.trovate };
       if (chiaveCache) await cache.setJSON(chiaveCache, out);
     }

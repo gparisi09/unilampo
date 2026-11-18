@@ -8,7 +8,6 @@ function marca(t) {
     .replace(/\[(\d{1,2})\]/g, '<button type="button" class="cit" data-fonte="$1">[$1]</button>');
 }
 function toast(t) { var e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(function () { e.classList.remove('on'); }, 2600); }
-function dollari(x) { x = Number(x) || 0; if (x > 0 && x < 0.001) return 'meno di $0,001'; return '$' + (x < 0.1 ? x.toFixed(3) : x.toFixed(2)).replace('.', ','); }
 function nid(p) { return (p || '') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function giorno(d) { var x = d ? new Date(d) : new Date(); return x.toLocaleDateString('sv-SE'); }
 function traGiorni(n) { var d = new Date(); d.setDate(d.getDate() + n); return giorno(d); }
@@ -39,28 +38,14 @@ function dispCarica(cid) {
   return api('/api/caricamento?uid=' + S.uid + '&cid=' + cid).then(function (r) { dispSalva(cid, r.dispensa); return r.dispensa; }).catch(function () { return loc; });
 }
 
-// ---------- AI: stato, regole di costo, stima ----------
-var AI = { accesa: false, chiave: false, pin: false, speso: 0, tetto: 0, regole: null, letto: false };
+// ---------- AI: stato (costi e regole sono solo nel pannello) ----------
+var AI = { accesa: false, maxFonti: 3, maxCaratteri: 60000, letto: false };
 function leggiStato() { return api('/api/stato').then(function (r) { r.letto = true; AI = r; return r; }).catch(function () { AI.letto = true; return AI; }); }
-// Stessa formula del server (netlify/lib/regole.mjs): ingresso stimato + uscita massima + ricerche.
-function stima(passo, o) {
-  var R = AI.regole; if (!R) return 0; o = o || {};
-  var mod = (passo === 'capitolo' || passo === 'mappa') ? R.COSTOSO : R.ECONOMICO, p = R.PREZZI[mod];
-  var tok = Math.ceil((o.caratteri || 0) / R.CARATTERI_PER_TOKEN), ric = o.ricerche || 0;
-  var pa = mod === R.COSTOSO ? (o.cacheLetta ? p.cacheR : p.cacheW) : p.in;
-  return (tok * pa + (R.INGRESSO_FISSO[passo] + ric * R.TOKEN_PER_RICERCA) * p.in + R.USCITA[passo] * p.out) / 1e6 + ric * R.PREZZO_RICERCA;
-}
-function nomeModello(m) { return /haiku/.test(m) ? 'modello economico' : 'modello avanzato'; }
-function genera(cid, passo, extra) {
-  var b = Object.assign({ uid: S.uid, cid: cid, passo: passo }, extra || {});
-  return api('/api/genera', b).then(function (r) { if (r.usd) AI.speso = Math.round((AI.speso + r.usd) * 1e5) / 1e5; return r; });
-}
+function genera(cid, passo, extra) { return api('/api/genera', Object.assign({ uid: S.uid, cid: cid, passo: passo }, extra || {})); }
+var PAUSA = 'Il generatore è in pausa: le dispense già pronte, i test e il ripasso funzionano. Riprova più tardi.';
 function erroreAI(e) {
-  if (e && e.error === 'spenta') return "Il generatore AI è spento. Accendilo dalle impostazioni (serve il PIN).";
-  if (e && e.error === 'tetto') return 'Raggiunto il tetto di spesa di oggi (' + dollari(e.tetto) + '). Riprova domani.';
-  if (e && e.error === 'parse') return 'Risposta non valida dal modello: riprova.';
-  if (e && e.error === 'upstream') return 'Anthropic non risponde (' + (e.status || '') + '): controlla chiave e credito.';
-  return 'Qualcosa non ha funzionato: riprova tra poco.';
+  if (e && (e.error === 'spenta' || e.error === 'tetto')) return PAUSA;
+  return 'Il generatore non risponde: riprova tra poco.';
 }
 
 // ---------- navigazione ----------
@@ -142,16 +127,9 @@ function vMaterie() {
       '<span class="note">' + car.length + (car.length === 1 ? ' dispensa' : ' dispense') + ' · ' + nq + ' domande' + (st.tot ? ' · ' + st.tot + ' risposte date' : '') + '</span></button>';
   });
   h += '<div class="row"><button class="btn ghost small" data-act="nuova-materia" style="color:var(--blu)">+ Materia</button>' + (S.materie.length ? '<button class="btn" data-act="carica">+ Carica appunti</button>' : '') + '</div></div>';
-  h += cardAI();
   v.innerHTML = h;
   v.querySelectorAll('[data-mat]').forEach(function (b) { b.onclick = function () { mostra('materia', b.dataset.mat); }; });
   azioni(v);
-}
-function cardAI() {
-  if (!AI.letto) return '';
-  var s = AI.accesa ? 'Acceso' : 'Spento';
-  return '<button class="dark" data-act="set" style="border:0;text-align:left;width:100%;color:var(--ink)"><span class="flex" style="width:100%"><span><span class="lab">Generatore AI</span><br><b style="font-size:15px">' + s + '</b></span><span class="sw' + (AI.accesa ? ' on' : '') + '"></span></span>' +
-    '<span class="note">Tetto di oggi ' + dollari(AI.tetto) + ' · speso ' + dollari(AI.speso) + '. Quello che è già generato resta usabile gratis.</span></button>';
 }
 function azioni(root) {
   root.querySelectorAll('[data-act]').forEach(function (b) {
@@ -159,7 +137,6 @@ function azioni(root) {
       var a = b.dataset.act;
       if (a === 'nuova-materia') nuovaMateria();
       else if (a === 'carica') mostra('carica', b.dataset.m || (cur.view === 'materia' ? cur.arg : null));
-      else if (a === 'set') mostra('set');
       else if (a === 'ripasso-oggi') avviaTest({ tipo: 'ripasso', mid: b.dataset.m || null });
     };
   });
@@ -215,7 +192,7 @@ function vCarica(arg) {
     '<div id="c-letto"></div>' +
     '<details><summary class="note" style="cursor:pointer;font-size:13.5px">Oppure incolla il testo</summary><textarea class="in" id="c-txt" rows="7" placeholder="Incolla qui i tuoi appunti" style="margin-top:8px"></textarea></details>' +
     '<div class="field"><label for="c-tit">Titolo (facoltativo)</label><input id="c-tit" maxlength="100" placeholder="es. Lezione 4 · Elasticità"></div>' +
-    '<button class="btn" id="c-go" disabled>Continua</button><span class="note">Gli appunti vengono letti sul telefono e salvati solo nel tuo spazio. Nessuna generazione parte senza che tu veda prima la stima.</span></div>';
+    '<button class="btn" id="c-go" disabled>Continua</button><span class="note">Gli appunti vengono letti sul telefono e salvati solo nel tuo spazio.</span></div>';
   v.querySelector('[data-b]').onclick = function () { if (materia(mid)) mostra('materia', mid); else mostra('materie'); };
   var go = $('c-go'), aggiorna = function () { var t = (CAR.testo || $('c-txt').value).trim(); go.disabled = t.length < 200; };
   $('c-txt').oninput = function () { CAR.testo = ''; CAR.file = ''; $('c-letto').innerHTML = ''; aggiorna(); };
@@ -228,7 +205,7 @@ function vCarica(arg) {
       var poco = r.testo.trim().length < 200;
       $('c-letto').innerHTML = '<div class="file"><i>' + (/pdf$/i.test(f.name) ? 'PDF' : 'TXT') + '</i><div><b>' + esc(f.name) + '</b><div class="note">' + (r.pagine ? r.pagine + ' pagine · ' : '') + r.testo.length.toLocaleString('it-IT') + ' caratteri letti</div></div></div>' +
         (poco ? '<div class="box tr"><span class="t">Testo non trovato</span>Questo PDF sembra una scansione (immagini, non testo). Per ora UniLampo legge solo PDF con testo selezionabile: prova a esportarlo di nuovo o incolla il testo.</div>' : '') +
-        (r.testo.length > ((AI.regole && AI.regole.MAX_CARATTERI_APPUNTI) || 60000) ? '<div class="note">Gli appunti sono lunghi: verranno usati i primi ' + ((AI.regole && AI.regole.MAX_CARATTERI_APPUNTI) || 60000).toLocaleString('it-IT') + ' caratteri. Per il resto fai un secondo caricamento.</div>' : '');
+        (r.testo.length > (AI.maxCaratteri || 60000) ? '<div class="note">Gli appunti sono lunghi: verranno usati i primi ' + (AI.maxCaratteri || 60000).toLocaleString('it-IT') + ' caratteri. Per il resto fai un secondo caricamento.</div>' : '');
       aggiorna();
     }).catch(function () { $('c-letto').innerHTML = '<div class="box tr"><span class="t">Non riesco a leggerlo</span>Prova con un altro file o incolla il testo.</div>'; });
   };
@@ -257,15 +234,14 @@ function passiCaricamento(c) {
   var v = $('v-carica'); cur.arg = { cid: c.id };
   v.innerHTML = '<button class="back" data-b>← ' + esc((materia(c.materiaId) || {}).nome || 'Indietro') + '</button><h2 style="font-size:24px">' + esc(c.titolo) + '</h2><div id="p-corpo"><div class="card"><span class="spin"></span></div></div>';
   v.querySelector('[data-b]').onclick = function () { mostra('materia', c.materiaId); };
-  Promise.all([dispCarica(c.id), AI.regole ? AI : leggiStato()]).then(function (x) { disegnaPassi(c, x[0]); });
+  Promise.all([dispCarica(c.id), leggiStato()]).then(function (x) { disegnaPassi(c, x[0]); });
 }
 function disegnaPassi(c, d) {
   var box = $('p-corpo'); if (!box || !d) { if (box) box.innerHTML = '<div class="empty">Non trovo questo caricamento.</div>'; return; }
-  var R = AI.regole, h = '';
+  var h = '';
   h += '<div class="card"><div class="file"><i>' + (/pdf$/i.test(c.file || '') ? 'PDF' : 'TXT') + '</i><div><b>' + esc(c.file || c.titolo) + '</b><div class="note">' + (d.caratteri || 0).toLocaleString('it-IT') + ' caratteri</div></div></div>';
   if (!d.argomenti.length) {
-    var s1 = stima('argomenti', { caratteri: d.caratteri });
-    h += '<span class="lab">1 · Trova gli argomenti</span><table class="est"><tr><td>Lettura degli appunti<br><span class="note">' + nomeModello(R && R.ECONOMICO) + '</span></td><td>' + dollari(s1) + '</td></tr><tr class="tot"><td>Stima massima</td><td>' + dollari(s1) + '</td></tr></table>' +
+    h += '<span class="lab">1 · Trova gli argomenti</span><span style="font-size:14px">Leggo gli appunti e trovo gli argomenti principali, nell\'ordine in cui li hai scritti.</span>' +
       notaAI() + '<button class="btn" id="p-arg"' + (AI.accesa ? '' : ' disabled') + '>Trova gli argomenti</button></div>';
     box.innerHTML = h;
     var b = $('p-arg'); if (b) b.onclick = function () {
@@ -276,27 +252,19 @@ function disegnaPassi(c, d) {
     return;
   }
   h += '<span class="lab">Argomenti trovati (' + d.argomenti.length + ')</span><div class="chips">' + d.argomenti.map(function (a) { return '<span class="chip on">' + esc(a.titolo) + '</span>'; }).join('') + '</div></div>';
-  // stima della dispensa, contando solo i passaggi che mancano
-  var n = d.argomenti.length, righe = { ricerca: 0, capitolo: 0, domande: 0, mappa: 0 };
-  for (var i = 0; i < n; i++) {
-    if (!d.ricerca[i]) righe.ricerca += stima('ricerca', { ricerche: R.RICERCHE_PER_ARGOMENTO });
-    if (!d.capitoli[i]) righe.capitolo += stima('capitolo', { caratteri: d.caratteri, cacheLetta: i > 0 });
-    if (!d.domande[i]) righe.domande += stima('domande');
-  }
-  if (!d.mappa) righe.mappa = stima('mappa');
-  var tot = righe.ricerca + righe.capitolo + righe.domande + righe.mappa;
-  h += '<div class="card"><span class="lab">2 · Dispensa · stima prima di generare</span><table class="est">' +
-    '<tr><td>Ricerca fonti<br><span class="note">max ' + R.MAX_FONTI_PER_ARGOMENTO + ' fonti per argomento · ' + R.RICERCHE_PER_ARGOMENTO + ' ricerche web · ' + nomeModello(R.ECONOMICO) + '</span></td><td>' + dollari(righe.ricerca) + '</td></tr>' +
-    '<tr><td>Scrittura dispensa e mappa<br><span class="note">' + nomeModello(R.COSTOSO) + '</span></td><td>' + dollari(righe.capitolo + righe.mappa) + '</td></tr>' +
-    '<tr><td>Domande del test e dell\'orale<br><span class="note">' + nomeModello(R.ECONOMICO) + '</span></td><td>' + dollari(righe.domande) + '</td></tr>' +
-    '<tr class="tot"><td>Stima massima</td><td>≈ ' + dollari(tot) + '</td></tr></table>' +
-    '<span class="note">Si genera una volta e resta salvata. Le parti già pronte non si pagano di nuovo. Tetto di oggi: ' + dollari(AI.tetto) + ', speso ' + dollari(AI.speso) + '.</span>' + notaAI() +
+  var n = d.argomenti.length;
+  h += '<div class="card"><span class="lab">2 · Cosa preparo</span><div class="steps">' +
+    '<div><i>1</i><span>Cerco fino a ' + (AI.maxFonti || 3) + ' fonti affidabili per argomento</span></div>' +
+    '<div><i>2</i><span>Scrivo ' + n + (n === 1 ? ' capitolo' : ' capitoli') + ' con riquadri e confronto con le fonti</span></div>' +
+    '<div><i>3</i><span>Mappa a colori</span></div>' +
+    '<div><i>4</i><span>Circa ' + (8 * n) + ' domande a crocette e ' + (2 * n) + ' per l\'orale</span></div></div>' +
+    '<span class="note">Ci vuole circa un minuto. La dispensa resta salvata.</span>' + notaAI() +
     '<div class="steps" id="p-steps"></div><button class="btn v" id="p-go"' + (AI.accesa ? '' : ' disabled') + '>' + (c.stato === 'parziale' ? 'Completa la dispensa' : 'Genera dispensa') + '</button></div>';
   box.innerHTML = h;
-  disegnaSteps(d);
+  if (c.stato === 'parziale') disegnaSteps(d); // l'avanzamento compare quando la generazione parte
   var g = $('p-go'); if (g) g.onclick = function () { g.disabled = true; g.innerHTML = '<span class="spin"></span> Sto preparando la dispensa…'; costruisci(c, d).then(function (okTutto) { if (okTutto) { c.stato = 'pronta'; salva(); toast('Dispensa pronta'); mostra('dispensa', c.id); } else { c.stato = 'parziale'; salva(); g.disabled = false; g.textContent = 'Riprova da dove si è fermata'; } }); };
 }
-function notaAI() { return AI.accesa ? '' : '<div class="box tr"><span class="t">Generatore AI spento</span>' + (AI.chiave ? 'Accendilo dalle impostazioni con il PIN.' : 'Manca la chiave Anthropic su Netlify.') + '</div>'; }
+function notaAI() { return AI.accesa ? '' : '<div class="box tr"><span class="t">In pausa</span>' + PAUSA + '</div>'; }
 function elencoPassi(d) {
   var o = [];
   d.argomenti.forEach(function (a, i) { o.push({ passo: 'ricerca', i: i, nome: 'Fonti · ' + a.titolo, fatto: !!d.ricerca[i] }); o.push({ passo: 'capitolo', i: i, nome: 'Capitolo ' + (i + 1) + ' · ' + a.titolo, fatto: !!d.capitoli[i] }); o.push({ passo: 'domande', i: i, nome: 'Domande · ' + a.titolo, fatto: !!d.domande[i] }); });
@@ -400,11 +368,10 @@ function mostraFonte(d, n) {
 }
 function approfondisci(c, d, key, cap, testo) {
   var gia = d.approfondimenti[key];
-  if (gia) return sheet('<div class="flex"><span class="lab">Approfondimento</span><span class="tag dark">Nella dispensa ✓</span></div>' + corpoApp(d, gia) + '<span class="note">Generato una volta il ' + giornoIt(gia.data) + '. Riaprirlo non costa nulla.</span><button class="btn v" data-close>Chiudi</button>', function (r) { legaSheet(r, d); });
-  var R = AI.regole, s = stima('approfondisci', { ricerche: R ? R.RICERCHE_APPROFONDISCI : 1 });
+  if (gia) return sheet('<div class="flex"><span class="lab">Approfondimento</span><span class="tag dark">Nella dispensa ✓</span></div>' + corpoApp(d, gia) + '<span class="note">Salvato nella dispensa il ' + giornoIt(gia.data) + '.</span><button class="btn v" data-close>Chiudi</button>', function (r) { legaSheet(r, d); });
   sheet('<span class="lab">Approfondisci</span><div style="font-family:\'Bricolage Grotesque\';font-size:17px;line-height:1.3">“' + esc(testo.slice(0, 110)) + (testo.length > 110 ? '…' : '') + '”</div>' +
     '<span class="note">Spiegazione più profonda, esempi, collegamenti con gli altri argomenti di ' + esc((materia(c.materiaId) || {}).nome || 'questa materia') + ', fonti e 3 domande nuove per i test. Si genera una volta e si salva nella dispensa.</span>' +
-    '<table class="est"><tr><td>Approfondimento<br><span class="note">' + nomeModello(R && R.ECONOMICO) + ' · max ' + (R ? R.RICERCHE_APPROFONDISCI : 1) + ' ricerca web</span></td><td>' + dollari(s) + '</td></tr><tr class="tot"><td>Stima massima</td><td>' + dollari(s) + '</td></tr></table>' + notaAI() +
+    notaAI() +
     '<button class="btn" id="ap-go"' + (AI.accesa ? '' : ' disabled') + '>Genera approfondimento</button><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
       r.querySelector('[data-close]').onclick = chiudiSheet;
       var b = r.querySelector('#ap-go'); if (!b) return;
@@ -507,11 +474,11 @@ function vOrale() {
   var v = $('v-orale'), conOr = S.materie.filter(function (m) { return oraliMateria(m.id).length; });
   if (!conOr.length) { v.innerHTML = '<h2 style="font-size:25px;margin-top:4px">Orale</h2><div class="empty"><b>Nessuna domanda d\'orale ancora</b><span>Ogni dispensa prepara 2 domande d\'orale per argomento, con i punti chiave che la commissione controlla.</span></div>'; return; }
   var mid = conOr.some(function (m) { return m.id === S.ultimaMateria; }) ? S.ultimaMateria : conOr[0].id;
-  var dom = oraliMateria(mid), R = AI.regole, st = R ? stima('orale') * 4 : 0, ult = S.orali.filter(function (o) { return o.mid === mid; }).slice(-3).reverse();
+  var dom = oraliMateria(mid), ult = S.orali.filter(function (o) { return o.mid === mid; }).slice(-3).reverse();
   var h = '<div class="flex"><h2 style="font-size:25px;margin-top:4px">Orale</h2></div><div class="chips">' + conOr.map(function (m) { return '<button class="chip' + (m.id === mid ? ' on' : '') + '" data-m="' + m.id + '">' + esc(m.nome) + '</button>'; }).join('') + '</div>' +
     '<div class="comm"><div class="mem" id="m0"><div class="av">P</div>Presidente</div><div class="mem" id="m1"><div class="av">C1</div>Commissario</div><div class="mem" id="m2"><div class="av">C2</div>Assistente</div></div>' +
     '<div class="card" id="o-box"><span class="lab">Come funziona</span><span style="font-size:14px">La commissione ti fa una domanda a voce e può farti fino a due domande di approfondimento. Rispondi parlando. Alla fine il voto e i punti toccati li decide il sistema, non tu.</span>' +
-    '<table class="est"><tr><td>Un colloquio (fino a 4 scambi)<br><span class="note">' + nomeModello(R && R.ECONOMICO) + ' · voce del telefono, gratis</span></td><td>' + dollari(st) + '</td></tr><tr class="tot"><td>Stima massima</td><td>' + dollari(st) + '</td></tr></table>' + notaAI() +
+    notaAI() +
     '<button class="btn" id="o-go"' + (AI.accesa ? '' : ' disabled') + '>Inizia l\'orale · domanda a caso</button><span class="note">' + dom.length + ' domande disponibili in questa materia.' + (SR ? '' : ' Su questo browser il riconoscimento vocale non c\'è: risponderai scrivendo, anche con il microfono della tastiera.') + '</span></div>';
   if (ult.length) h += '<div class="card"><span class="lab">Ultimi orali</span>' + ult.map(function (o) { return '<div class="li"><span>' + esc(o.domanda.slice(0, 70)) + (o.domanda.length > 70 ? '…' : '') + '<br><span class="note">' + giornoIt(o.data) + '</span></span><b>' + (o.voto >= 18 ? o.voto + (o.lode ? 'L' : '') + '/30' : 'Non sup.') + '</b></div>'; }).join('') + '</div>';
   v.innerHTML = h;
@@ -616,29 +583,13 @@ function prossimoPasso(due, deb) {
 // ---------- IMPOSTAZIONI ----------
 function vSet() {
   var v = $('v-set');
-  v.innerHTML = '<button class="back" data-b>← Materie</button><h2 style="font-size:25px">Impostazioni</h2><div class="card" id="s-ai"><span class="spin"></span></div>' +
+  v.innerHTML = '<button class="back" data-b>← Materie</button><h2 style="font-size:25px">Impostazioni</h2>' +
     '<div class="card"><span class="lab">Il tuo codice</span><span style="font-size:14px">Con questo codice ritrovi materie, dispense e progressi su un altro telefono.</span><b style="font-family:\'Bricolage Grotesque\';font-size:20px;letter-spacing:.02em;user-select:all">' + esc(S.uid) + '</b>' +
-    '<div class="field"><label for="s-cod">Usa un altro codice</label><input id="s-cod" placeholder="u…" autocomplete="off" autocapitalize="off"></div><button class="btn ghost small" id="s-usa" style="color:var(--blu);align-self:flex-start">Passa a questo codice</button></div>' +
-    '<div class="card"><span class="lab">Come lavora UniLampo</span><span style="font-size:13.5px">Dispense, fonti e domande si generano una volta per ogni caricamento e restano salvate. Ogni “Approfondisci” si genera una volta e poi si riapre gratis. Per la dispensa si usa il modello avanzato, per tutto il resto quello economico. La voce della commissione è quella del telefono, gratis.</span></div>';
+    '<div class="field"><label for="s-cod">Usa un altro codice</label><input id="s-cod" placeholder="u…" autocomplete="off" autocapitalize="off"></div><button class="btn ghost small" id="s-usa" style="color:var(--blu);align-self:flex-start">Passa a questo codice</button></div>';
   v.querySelector('[data-b]').onclick = function () { mostra('materie'); };
   $('s-usa').onclick = function () {
     var c = $('s-cod').value.trim().toLowerCase(); if (!/^u[a-z0-9]{8,30}$/.test(c)) return toast('Codice non valido.');
     api('/api/dati?uid=' + c).then(function (r) { if (!r.data) return toast('Nessun dato con questo codice.'); S = r.data; S.uid = c; try { localStorage.setItem('unilampo', JSON.stringify(S)); } catch (e) {} toast('Fatto: dati caricati'); mostra('materie'); }).catch(function () { toast('Non riesco a controllare il codice.'); });
-  };
-  leggiStato().then(disegnaAI);
-}
-function disegnaAI() {
-  var b = $('s-ai'); if (!b) return;
-  var R = AI.regole || {};
-  b.innerHTML = '<div class="flex"><div><span class="lab">Generatore AI</span><br><b style="font-size:17px">' + (AI.accesa ? 'Acceso' : 'Spento') + '</b></div><span class="sw' + (AI.accesa ? ' on' : '') + '"></span></div>' +
-    '<table class="est"><tr><td>Speso oggi</td><td>' + dollari(AI.speso) + '</td></tr><tr><td>Tetto giornaliero (nel codice)</td><td>' + dollari(AI.tetto) + '</td></tr><tr><td>Chiave Anthropic su Netlify</td><td>' + (AI.chiave ? 'presente' : 'manca') + '</td></tr><tr><td>Ricerca web</td><td>max ' + (R.MAX_FONTI_PER_ARGOMENTO || '–') + ' fonti per argomento</td></tr></table>' +
-    (!AI.chiave ? '<div class="box tr"><span class="t">Manca la chiave</span>Aggiungi ANTHROPIC_API_KEY nelle variabili del progetto su Netlify.</div>' : !AI.pin ? '<div class="box tr"><span class="t">Manca il PIN</span>Aggiungi UNILAMPO_PIN nelle variabili del progetto su Netlify: senza PIN l\'AI resta spenta.</div>' :
-      '<div class="field"><label for="s-pin">PIN</label><input id="s-pin" type="password" inputmode="numeric" autocomplete="off"></div><button class="btn' + (AI.accesa ? ' v' : '') + '" id="s-sw">' + (AI.accesa ? 'Spegni il generatore' : 'Accendi il generatore') + '</button>') +
-    '<span class="note">Prezzi in dollari perché Anthropic fattura in dollari. Il limite mensile è quello che hai impostato nella console Anthropic.</span>';
-  var sw = $('s-sw'); if (sw) sw.onclick = function () {
-    sw.disabled = true;
-    api('/api/interruttore', { pin: $('s-pin').value, accesa: !AI.accesa }).then(function () { return leggiStato(); }).then(function () { disegnaAI(); toast(AI.accesa ? 'Generatore acceso' : 'Generatore spento'); })
-      .catch(function (e) { sw.disabled = false; toast(e && e.error === 'pin' ? 'PIN sbagliato.' : e && e.error === 'troppi' ? 'Troppi tentativi: riprova più tardi.' : 'Non riesco a cambiare lo stato.'); });
   };
 }
 

@@ -30,12 +30,12 @@ export async function spesaOggi() {
   const g = await store("spesa").get(oggi(), { type: "json" }).catch(() => null);
   return g || { usd: 0, voci: {} };
 }
-export async function registraSpesa(voce, usd) {
+export async function registraSpesa(voce, usd, ricerche = 0) {
   const st = store("spesa"), k = oggi();
   const g = (await st.get(k, { type: "json" }).catch(() => null)) || { usd: 0, voci: {} };
   g.usd = Math.round((g.usd + usd) * 1e5) / 1e5;
   const v = g.voci[voce] || { chiamate: 0, usd: 0 };
-  v.chiamate++; v.usd = Math.round((v.usd + usd) * 1e5) / 1e5;
+  v.chiamate++; v.usd = Math.round((v.usd + usd) * 1e5) / 1e5; v.ricerche = (v.ricerche || 0) + ricerche;
   g.voci[voce] = v;
   await st.setJSON(k, g);
   return g;
@@ -43,4 +43,16 @@ export async function registraSpesa(voce, usd) {
 export async function puoSpendere(stima) {
   const g = await spesaOggi();
   return { ok: g.usd + stima <= TETTO_GIORNO, speso: g.usd, tetto: TETTO_GIORNO };
+}
+
+// PIN del pannello: confronto e blocco dopo troppi tentativi sbagliati.
+const tentativi = new Map();
+export function controllaPin(req, pin) {
+  const giusto = process.env.UNILAMPO_PIN;
+  if (!giusto) return "nopin";
+  const ip = req.headers.get("x-nf-client-connection-ip") || "x", t = tentativi.get(ip) || 0;
+  if (t >= 8) return "troppi";
+  if (String(pin || "") !== giusto) { tentativi.set(ip, t + 1); return "pin"; }
+  tentativi.delete(ip);
+  return "";
 }
