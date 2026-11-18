@@ -201,7 +201,7 @@ function caricaFile(m, f) {
   toast('Leggo ' + f.name + '…');
   leggiFile(f).then(function (r) {
     if (r.testo.trim().length < 200) { sheet('<h2 style="font-size:21px">Testo non trovato</h2><span style="font-size:14.5px">Questo PDF sembra una scansione (immagini, non testo). Per ora UniLampo legge solo PDF con testo selezionabile: prova a esportarlo di nuovo, oppure incolla il testo.</span><button class="btn" data-close>Ho capito</button>', function (x) { x.querySelector('[data-close]').onclick = chiudiSheet; }); return; }
-    scegliParti(f.name + (r.pagine ? ' · ' + r.pagine + ' pagine' : ''), function (p) { nuovoCaricamento(m, r.testo, f.name, f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 100), p); });
+    scegliParti(f.name + (r.pagine ? ' · ' + r.pagine + (r.pagine === 1 ? ' pagina' : ' pagine') : ''), function (p) { nuovoCaricamento(m, r.testo, f.name, f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 100), p); });
   }).catch(function () { toast('Non riesco a leggere il file.'); });
 }
 function nuovoCaricamento(m, testo, file, titolo, parti) {
