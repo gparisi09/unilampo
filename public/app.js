@@ -270,7 +270,7 @@ function disegnaPassi(c, d) {
     box.innerHTML = h;
     var b = $('p-arg'); if (b) b.onclick = function () {
       b.disabled = true; b.innerHTML = '<span class="spin"></span> Leggo gli appunti…';
-      genera(c.id, 'argomenti').then(function (r) { d.argomenti = r.dato.argomenti; d.titolo = r.dato.titolo; c.stato = 'argomenti'; if (r.dato.titolo && (!c.titolo || c.titolo === c.file || c.titolo === String(c.file || '').replace(/\.[a-z0-9]+$/i, ''))) c.titolo = r.dato.titolo; salva(); dispSalva(c.id, d); disegnaPassi(c, d); })
+      genera(c.id, 'argomenti').then(function (r) { d.argomenti = r.dato.argomenti; d.titolo = r.dato.titolo; c.stato = 'argomenti'; if (r.dato.titolo && (!c.titolo || c.titolo === c.file || c.titolo === String(c.file || '').replace(/\.[a-z0-9]+$/i, ''))) c.titolo = r.dato.titolo; salva(); dispSalva(c.id, d); var h2 = document.querySelector('#v-carica h2'); if (h2) h2.textContent = c.titolo; disegnaPassi(c, d); })
         .catch(function (e) { b.disabled = false; b.textContent = 'Trova gli argomenti'; toast(erroreAI(e)); });
     };
     return;
