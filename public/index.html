@@ -83,11 +83,21 @@ button,a{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .cit{font-size:10.5px;font-weight:700;color:var(--blu2);vertical-align:super;background:none;border:0;padding:0 1px;cursor:pointer}
 .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--ink2);background:#F6FAFE;border-radius:9px;padding:7px 9px}
 .legend s{width:20px;height:8px;border-radius:3px;display:inline-block;text-decoration:none;margin-right:3px;vertical-align:middle}
-.map{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.map .core{grid-column:1/-1;justify-self:center;background:var(--navy);color:var(--cel);border-radius:14px;padding:10px 14px;font-family:'Bricolage Grotesque';font-weight:800;font-size:15px;text-align:center;max-width:80%}
-.node{border-radius:12px;padding:8px 9px;font-size:12px;line-height:1.3;border:1.5px solid;display:flex;flex-direction:column;gap:4px;text-align:left;color:var(--ink)}
-.node b{font-size:12.5px}
-.node .ap{align-self:flex-start;font-size:10.5px;font-weight:700;color:var(--navy);background:#fff;border-radius:99px;padding:3px 8px;border:1px solid currentColor}
+.map{position:relative;display:grid;grid-template-columns:1fr 1fr;column-gap:20px;row-gap:12px;padding:4px 0}
+.map svg.linee{position:absolute;left:0;top:0;width:100%;z-index:0;pointer-events:none}.map svg.linee path{fill:none;stroke-width:2.5;stroke-linecap:round}
+.map .core{grid-column:1/-1;justify-self:center;position:relative;z-index:1;background:var(--navy);color:#fff;border-radius:16px;padding:12px 18px;text-align:center;max-width:86%;box-shadow:0 8px 20px -10px rgba(15,35,80,.6);display:flex;flex-direction:column;gap:3px;margin:6px 0}
+.map .core b{font-family:'Bricolage Grotesque';font-weight:800;font-size:18px;color:var(--cel);line-height:1.15}.map .core span{font-size:11.5px;color:#C9DBF5;line-height:1.3}
+.node{position:relative;z-index:1;border-radius:14px;padding:9px 10px 10px;font-size:12.5px;line-height:1.38;border:2px solid;display:flex;flex-direction:column;gap:6px;text-align:left;color:var(--ink);box-shadow:0 4px 10px -8px rgba(15,35,80,.5)}
+.node.largo{grid-column:1/-1;justify-self:center;width:86%}
+.node .nt{display:flex;gap:6px;align-items:flex-start}.node .nt b{font-family:'Bricolage Grotesque';font-weight:800;font-size:14px;line-height:1.15;color:var(--navy)}
+.node .nn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--cb);color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;margin-top:-1px}
+.node .fo{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;border-top:1.5px dashed var(--cb);padding-top:6px}
+.node .fo li{position:relative;padding-left:12px;font-size:11.8px;color:var(--ink2)}.node .fo li:before{content:'';position:absolute;left:2px;top:.55em;width:5px;height:5px;border-radius:50%;background:var(--cb)}
+.node .nb{display:flex;gap:5px;flex-wrap:wrap;margin-top:auto}
+.node .ap,.node .vai{font-size:10.5px;font-weight:700;color:var(--navy);background:#fff;border-radius:99px;padding:3px 8px;border:1px solid var(--cb)}
+.node .vai{background:var(--navy);color:#fff;border-color:var(--navy)}
+.colleg{display:flex;flex-direction:column;gap:6px;background:#F6FAFE;border-radius:12px;padding:10px 11px}.colleg>div{display:flex;gap:9px;align-items:center;font-size:13px;color:var(--ink2)}
+.colleg .cp{flex:none;display:inline-flex;gap:3px;align-items:center;font-weight:800;color:var(--muto)}.colleg .cp i{font-style:normal;width:22px;height:22px;border-radius:50%;background:var(--c);border:2px solid var(--cb);color:var(--navy);font-size:11.5px;display:inline-flex;align-items:center;justify-content:center}
 .c1{--c:var(--k1);--cb:var(--k1b)}.c2{--c:var(--k2);--cb:var(--k2b)}.c3{--c:var(--k3);--cb:var(--k3b)}.c4{--c:var(--k4);--cb:var(--k4b)}.c5{--c:var(--k5);--cb:var(--k5b)}.c6{--c:var(--k6);--cb:var(--k6b)}
 .node.c1,.node.c2,.node.c3,.node.c4,.node.c5,.node.c6{background:var(--c);border-color:var(--cb)}
 .apbtn{align-self:flex-start;display:inline-flex;gap:6px;align-items:center;background:var(--blu);color:#fff;font-weight:700;font-size:12px;border-radius:99px;padding:6px 11px;border:0;min-height:32px}

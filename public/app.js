@@ -111,7 +111,7 @@ function vStudia() {
   h += '<div class="hero"><div class="flex"><span class="lab">Materia</span></div><h2>' + esc(m.nome) + '<button class="ed" type="button" data-ed aria-label="Modifica nome">' + MATITA + '</button></h2>' +
     '<div class="stat"><div><b>' + (st.pct === null ? '–' : st.pct + '%') + '</b><span>risposte giuste</span></div><div><b>' + (function (k) { return k + '</b><span>' + (k === 1 ? 'dispensa' : 'dispense'); })(car.filter(function (c) { return c.stato === 'pronta'; }).length) + '</span></div><div><b>' + nq + '</b><span>' + (nq === 1 ? 'domanda' : 'domande') + '</span></div></div></div>';
   if (due.length) h += '<button class="giallo" data-rip><span>Ripassa le ' + due.length + (due.length === 1 ? ' domanda sbagliata' : ' domande sbagliate') + '</span><span class="fr">→</span></button>';
-  h += '<label class="up"><input type="file" id="up-file" accept=".pdf,.txt,.md,application/pdf,text/plain"><span class="plus">+</span><span><b>Carica appunti</b><span>PDF o testo · la dispensa si prepara da sola</span></span></label>';
+  h += '<label class="up"><input type="file" id="up-file" accept=".pdf,.txt,.md,application/pdf,text/plain"><span class="plus">+</span><span><b>Carica appunti</b><span>PDF o testo · dispensa, test o mappa: scegli tu</span></span></label>';
   h += '<button class="linkap" data-incolla style="align-self:center">oppure incolla il testo</button>';
   h += boxNotifiche();
   if (car.length) h += '<div class="sez">Dispense <small>' + car.length + '</small></div>';
@@ -129,16 +129,17 @@ function vStudia() {
   v.querySelectorAll('[data-apri]').forEach(function (b) { b.onclick = function () { mostra('dispensa', b.dataset.apri); }; });
   v.querySelectorAll('[data-test]').forEach(function (b) { b.onclick = function () { avviaTest({ tipo: 'verifica', cid: b.dataset.test }); }; });
   v.querySelectorAll('[data-orale]').forEach(function (b) { b.onclick = function () { S.ultimaMateria = m.id; S.oraleCid = b.dataset.orale; salva(); mostra('orale'); }; });
+  v.querySelectorAll('[data-agg]').forEach(function (b) { b.onclick = function () { aggiungiParte(b.dataset.agg); }; });
   v.querySelectorAll('[data-riprendi]').forEach(function (b) { b.onclick = function () { var c = S.caricamenti.find(function (x) { return x.id === b.dataset.riprendi; }); if (c) prepara(c); }; });
 }
 // Elenco delle fasi con spunte: si vede sempre a che punto è e, se si ferma, dove.
 function fasi(j) {
-  var k = j.conta || {}, n = k.n || 0, err = !!j.errore, righe = [
-    ['Argomenti', k.argomenti ? 'trovati: ' + n : '', k.argomenti ? 1 : 0, 1],
-    ['Fonti affidabili', n ? (k.fonti || 0) + ' di ' + n : '', k.fonti || 0, n || 1],
-    ['Capitoli', n ? (k.capitoli || 0) + ' di ' + n : '', k.capitoli || 0, n || 1],
-    ['Domande', n ? (k.domande || 0) + ' di ' + n : '', k.domande || 0, n || 1],
-    ['Mappa', '', k.mappa || 0, 1]], primoAperto = -1;
+  var k = j.conta || {}, n = k.n || 0, err = !!j.errore, p = j.parti || { dispensa: true }, righe = [
+    ['Argomenti', k.argomenti ? 'trovati: ' + n : '', k.argomenti ? 1 : 0, 1, true],
+    ['Fonti affidabili', n ? (k.fonti || 0) + ' di ' + n : '', k.fonti || 0, n || 1, p.dispensa],
+    ['Capitoli', n ? (k.capitoli || 0) + ' di ' + n : '', k.capitoli || 0, n || 1, p.dispensa],
+    ['Domande', n ? (k.domande || 0) + ' di ' + n : '', k.domande || 0, n || 1, p.dispensa || p.test],
+    ['Mappa', '', k.mappa || 0, 1, p.dispensa || p.mappa]].filter(function (r) { return r[4]; }), primoAperto = -1;
   righe.forEach(function (r, i) { if (primoAperto < 0 && r[2] < r[3]) primoAperto = i; });
   return '<div class="steps">' + righe.map(function (r, i) {
     var fatto = r[2] >= r[3], ora = i === primoAperto, cl = fatto ? 'fatto' : ora ? (err ? 'err' : 'ora') : '';
@@ -148,15 +149,23 @@ function fasi(j) {
 function cartaDispensa(c) {
   var j = JOBS[c.id], d = dispLocale(c.id), nCap = d ? Object.keys(d.capitoli || {}).length : 0, nArg = d ? d.argomenti.length : 0;
   if (c.stato === 'pronta') {
-    var nq = domandeDi(c.id).length;
-    return '<div class="dc"><button class="tt" data-apri="' + c.id + '"><span><h3>' + esc(c.titolo) + '</h3><span class="note">' + nCap + (nCap === 1 ? ' capitolo' : ' capitoli') + ' · ' + nq + ' domande · ' + giornoIt(c.data) + '</span></span><span class="go">›</span></button>' +
-      '<div class="row"><button class="btn v small" data-test="' + c.id + '"' + (nq ? '' : ' disabled') + '>Test</button><button class="btn ghost small" data-orale="' + c.id + '" style="color:var(--blu)">Orale</button></div></div>';
+    var nq = domandeDi(c.id).length, p = partiDi(c), et = etichettaParti(p), nRami = d && d.mappa ? d.mappa.rami.length : 0;
+    var info = p.dispensa ? nCap + (nCap === 1 ? ' capitolo' : ' capitoli') + ' · ' + nq + ' domande · ' + giornoIt(c.data) : [nq ? nq + ' domande' : '', nRami ? 'mappa: ' + nRami + ' rami' : ''].filter(Boolean).join(' · ');
+    var agg = p.dispensa ? '' : '<div class="row" style="gap:14px">' + (!p.test ? '<button class="linkap" data-agg="' + c.id + ':test">+ Aggiungi il test</button>' : '') + (!p.mappa ? '<button class="linkap" data-agg="' + c.id + ':mappa">+ Aggiungi la mappa</button>' : '') + '<button class="linkap" data-agg="' + c.id + ':dispensa" style="color:var(--blu2)">crea la dispensa completa</button></div>';
+    return '<div class="dc"><button class="tt" data-apri="' + c.id + '"><span><h3>' + esc(c.titolo) + '</h3><span class="note">' + (et ? '<span class="tag grey" style="margin-right:6px">' + et + '</span>' : '') + info + '</span></span><span class="go">›</span></button>' +
+      (nq ? '<div class="row"><button class="btn v small" data-test="' + c.id + '">Test</button><button class="btn ghost small" data-orale="' + c.id + '" style="color:var(--blu)">Orale</button></div>' : '') + agg + '</div>';
   }
   var pct = j ? Math.round(j.fatti / Math.max(1, j.totali) * 100) : 0, testo = j ? (j.errore ? j.errore : j.fase) : 'Preparazione interrotta';
   return '<div class="dc lav"><div class="tt"><span><h3>' + esc(c.titolo) + '</h3><span class="note">' + esc(j && j.errore ? 'Si è fermato: ' + j.errore : testo) + '</span></span>' + (j && !j.errore ? '<span class="spin"></span>' : '') + '</div>' + (j ? fasi(j) : '') +
     '<div class="bar"><i style="width:' + pct + '%"></i></div>' + (j && !j.errore ? '<span class="note">Puoi anche chiudere l\'app: continuo io. Quando torni la trovi qui.</span>' : '') +
     (nCap ? '<button class="btn small" data-apri="' + c.id + '">Inizia a leggere →</button>' : '') +
     (!j || j.errore ? '<button class="btn v small" data-riprendi="' + c.id + '"' + (AI.accesa ? '' : ' disabled') + '>Riprendi da dove si è fermata</button>' + (AI.accesa ? '' : notaAI()) : '') + '</div>';
+}
+function aggiungiParte(x) {
+  var q = x.split(':'), c = S.caricamenti.find(function (k) { return k.id === q[0]; }); if (!c) return;
+  if (!AI.accesa) return toast(PAUSA);
+  var o = {}; o[q[1]] = true; prepara(c, o);
+  if (cur.view === 'dispensa') mostra('studia');
 }
 function schedaCodice() {
   sheet('<h2 style="font-size:22px">Il tuo codice</h2><span style="font-size:14px">Con questo codice ritrovi materie, dispense e progressi su un altro telefono.</span><b style="font-family:\'Bricolage Grotesque\';font-size:22px;user-select:all">' + esc(S.uid) + '</b>' +
@@ -168,24 +177,39 @@ function schedaCodice() {
     };
   });
 }
+// Cosa preparare dal testo caricato: dispensa completa, solo test, solo mappa, test + mappa.
+function partiDi(c) { return (c && c.parti) || { dispensa: true }; }
+function etichettaParti(p) { return p.dispensa ? '' : p.test && p.mappa ? 'Test + mappa' : p.test ? 'Solo test' : 'Solo mappa'; }
+function scegliParti(nome, fatto) {
+  var scelte = [['dispensa', '📘', 'Dispensa completa', 'Capitoli spiegati, fonti verificate, mappa, test e orale.'], ['test', '✅', 'Solo test', 'Domande a crocette e per l\'orale, direttamente dal testo. Ideale se è già una dispensa.'], ['mappa', '🗺️', 'Solo mappa', 'Una mappa a colori dei concetti principali.'], ['testmappa', '🧩', 'Test + mappa', 'Le due cose insieme, senza riscrivere il testo.']], sel = 'dispensa';
+  var disegna = function (r) {
+    r.querySelector('#sp-opts').innerHTML = scelte.map(function (x) { var on = x[0] === sel; return '<button type="button" class="dc" data-sp="' + x[0] + '" style="flex-direction:row;align-items:center;gap:14px;text-align:left;border:2px solid ' + (on ? 'var(--blu)' : 'var(--soft)') + ';' + (on ? 'background:#F3F8FD;' : '') + 'color:var(--ink);padding:13px 14px"><span style="font-size:28px">' + x[1] + '</span><span style="flex:1"><b style="font-size:16.5px;font-family:\'Bricolage Grotesque\'">' + x[2] + '</b><br><span class="note" style="font-size:13px">' + x[3] + '</span></span><span style="flex:none;width:24px;height:24px;border-radius:50%;border:2px solid var(--blu);' + (on ? 'background:var(--blu);box-shadow:inset 0 0 0 4px #fff;' : '') + '"></span></button>'; }).join('');
+    r.querySelectorAll('[data-sp]').forEach(function (b) { b.onclick = function () { sel = b.dataset.sp; disegna(r); }; });
+  };
+  sheet('<span class="lab">' + esc(nome) + '</span><h2 style="font-size:24px">Cosa ti serve?</h2><div id="sp-opts" style="display:flex;flex-direction:column;gap:9px"></div><button class="btn" id="sp-ok">Prepara</button><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
+    disegna(r); r.querySelector('[data-close]').onclick = chiudiSheet;
+    r.querySelector('#sp-ok').onclick = function () { chiudiSheet(); fatto(sel === 'dispensa' ? { dispensa: true } : sel === 'test' ? { test: true } : sel === 'mappa' ? { mappa: true } : { test: true, mappa: true }); };
+  });
+}
 function incolla(m) {
-  sheet('<h2 style="font-size:22px">Incolla gli appunti</h2><textarea class="in" id="ic" rows="9" placeholder="Incolla qui il testo"></textarea><button class="btn" id="ic-ok">Prepara la dispensa</button><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
+  sheet('<h2 style="font-size:22px">Incolla gli appunti</h2><textarea class="in" id="ic" rows="9" placeholder="Incolla qui il testo"></textarea><button class="btn" id="ic-ok">Avanti</button><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
     r.querySelector('[data-close]').onclick = chiudiSheet;
-    r.querySelector('#ic-ok').onclick = function () { var t = $('ic').value.trim(); if (t.length < 200) return toast('Il testo è troppo corto.'); chiudiSheet(); nuovoCaricamento(m, t, '', 'Appunti incollati'); };
+    r.querySelector('#ic-ok').onclick = function () { var t = $('ic').value.trim(); if (t.length < 200) return toast('Il testo è troppo corto.'); chiudiSheet(); setTimeout(function () { scegliParti('Testo incollato', function (p) { nuovoCaricamento(m, t, '', 'Appunti incollati', p); }); }, 250); };
   });
 }
 function caricaFile(m, f) {
   toast('Leggo ' + f.name + '…');
   leggiFile(f).then(function (r) {
     if (r.testo.trim().length < 200) { sheet('<h2 style="font-size:21px">Testo non trovato</h2><span style="font-size:14.5px">Questo PDF sembra una scansione (immagini, non testo). Per ora UniLampo legge solo PDF con testo selezionabile: prova a esportarlo di nuovo, oppure incolla il testo.</span><button class="btn" data-close>Ho capito</button>', function (x) { x.querySelector('[data-close]').onclick = chiudiSheet; }); return; }
-    nuovoCaricamento(m, r.testo, f.name, f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 100));
+    scegliParti(f.name + (r.pagine ? ' · ' + r.pagine + ' pagine' : ''), function (p) { nuovoCaricamento(m, r.testo, f.name, f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 100), p); });
   }).catch(function () { toast('Non riesco a leggere il file.'); });
 }
-function nuovoCaricamento(m, testo, file, titolo) {
+function nuovoCaricamento(m, testo, file, titolo, parti) {
   if (!AI.accesa) { toast(PAUSA); }
   var cid = nid('c');
-  api('/api/caricamento', { uid: S.uid, cid: cid, materia: m.nome, titolo: titolo, file: file, testo: testo }).then(function (r) {
-    var c = { id: cid, materiaId: m.id, titolo: titolo, file: file, data: new Date().toISOString(), caratteri: r.caratteri, stato: 'nuovo' };
+  parti = parti || { dispensa: true };
+  api('/api/caricamento', { uid: S.uid, cid: cid, materia: m.nome, titolo: titolo, file: file, testo: testo, parti: parti }).then(function (r) {
+    var c = { id: cid, materiaId: m.id, titolo: titolo, file: file, data: new Date().toISOString(), caratteri: r.caratteri, stato: 'nuovo', parti: parti };
     S.caricamenti.push(c); salva();
     if (r.tagliato) toast('Appunti lunghi: uso la prima parte. Per il resto fai un altro caricamento.');
     if (AI.accesa) prepara(c); else rerender();
@@ -210,11 +234,14 @@ function aParti(lista, quanti, fn) { // esegue fn su ogni elemento, al massimo `
 // Di base la dispensa la prepara il server, in background: continua anche ad app chiusa.
 // Se il background non parte, la prepara il telefono (riserva).
 var SEGUO = {};
-function prepara(c) {
+function prepara(c, aggiungi) {
   if (JOBS[c.id] && !JOBS[c.id].errore) return;
-  JOBS[c.id] = { fase: 'Avvio la preparazione…', fatti: 0, totali: 10, errore: '' }; aggiornaVista();
+  var p = partiDi(c); aggiungi = aggiungi || {};
+  c.parti = { dispensa: !!(p.dispensa || aggiungi.dispensa), test: !!(p.test || aggiungi.test), mappa: !!(p.mappa || aggiungi.mappa) };
+  c.stato = 'nuovo'; if (Object.keys(aggiungi).length) c.dopo = Date.now(); else delete c.dopo; salva();
+  JOBS[c.id] = { fase: 'Avvio la preparazione…', fatti: 0, totali: 10, errore: '', parti: c.parti }; aggiornaVista();
   var m = materia(c.materiaId);
-  fetch('/api/prepara', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ uid: S.uid, cid: c.id, materia: m ? m.nome : '' }) })
+  fetch('/api/prepara', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ uid: S.uid, cid: c.id, materia: m ? m.nome : '', parti: c.parti }) })
     .then(function (r) { if (r.status === 202 || r.ok) setTimeout(function () { segui(c); }, 2500); else { delete JOBS[c.id]; preparaQui(c); } })
     .catch(function () { delete JOBS[c.id]; preparaQui(c); });
 }
@@ -224,12 +251,13 @@ function segui(c) {
   var giro = function () {
     dispCarica(c.id).then(function (d) {
       var L = d && d.lavoro;
+      if (L && c.dopo && (L.inizio || 0) < c.dopo - 15000) L = null; // è il lavoro precedente: aspetto quello nuovo
       if (d && d.titolo && (c.titolo === c.file || c.titolo === String(c.file || '').replace(/\.[a-z0-9]+$/i, '') || c.titolo === 'Appunti incollati')) { c.titolo = d.titolo; salva(); }
       if (!L) { SEGUO[c.id] = (SEGUO[c.id] === true ? 1 : SEGUO[c.id] + 1); if (SEGUO[c.id] > 15) { SEGUO[c.id] = false; return; } setTimeout(giro, 3000); return; } // il server sta ancora partendo
-      if (L.fine) { c.stato = 'pronta'; salva(); delete JOBS[c.id]; SEGUO[c.id] = false; toast('Dispensa pronta: ' + c.titolo); aggiornaVista(); return; }
-      if (L.errore) { c.stato = 'parziale'; salva(); JOBS[c.id] = { fase: L.dove || L.fase, fatti: L.fatti, totali: L.totali, conta: L.conta, errore: erroreAI({ error: L.errore }) }; SEGUO[c.id] = false; aggiornaVista(); return; }
-      if (Date.now() - (L.agg || 0) > 5 * 60000) { c.stato = 'parziale'; salva(); JOBS[c.id] = { fase: L.fase, fatti: L.fatti, totali: L.totali, conta: L.conta, errore: 'La preparazione si è interrotta.' }; SEGUO[c.id] = false; aggiornaVista(); return; }
-      JOBS[c.id] = { fase: L.fase, fatti: L.fatti, totali: L.totali, conta: L.conta, errore: '' }; aggiornaVista();
+      if (L.fine) { c.stato = 'pronta'; if (L.parti) c.parti = L.parti; delete c.dopo; salva(); delete JOBS[c.id]; SEGUO[c.id] = false; toast('Pronto: ' + c.titolo); aggiornaVista(); return; }
+      if (L.errore) { c.stato = 'parziale'; salva(); JOBS[c.id] = { fase: L.dove || L.fase, fatti: L.fatti, totali: L.totali, conta: L.conta, parti: L.parti, errore: erroreAI({ error: L.errore }) }; SEGUO[c.id] = false; aggiornaVista(); return; }
+      if (Date.now() - (L.agg || 0) > 5 * 60000) { c.stato = 'parziale'; salva(); JOBS[c.id] = { fase: L.fase, fatti: L.fatti, totali: L.totali, conta: L.conta, parti: L.parti, errore: 'La preparazione si è interrotta.' }; SEGUO[c.id] = false; aggiornaVista(); return; }
+      JOBS[c.id] = { fase: L.fase, fatti: L.fatti, totali: L.totali, conta: L.conta, parti: L.parti, errore: '' }; aggiornaVista();
       setTimeout(giro, 4000);
     }).catch(function () { setTimeout(giro, 6000); });
   };
@@ -245,7 +273,13 @@ function preparaQui(c) {
     d = d || { argomenti: [] };
     return (d.argomenti.length ? Promise.resolve(d) : passo('argomenti').then(function (r) { if (r.dato.titolo && (c.titolo === c.file || c.titolo === String(c.file || '').replace(/\.[a-z0-9]+$/i, '') || c.titolo === 'Appunti incollati')) c.titolo = r.dato.titolo; salva(); return ricarica(); }));
   }).then(function (d) {
-    var n = d.argomenti.length, idx = d.argomenti.map(function (a, i) { return i; });
+    var n = d.argomenti.length, idx = d.argomenti.map(function (a, i) { return i; }), P = partiDi(c);
+    j.parti = P;
+    if (!P.dispensa) { // solo test e/o mappa, direttamente dal testo
+      j.totali = 1 + (P.test ? n : 0) + (P.mappa ? 1 : 0); j.fatti = 1; j.fase = P.test ? 'Preparo le domande…' : 'Disegno la mappa…'; aggiornaVista();
+      return (P.test ? aParti(idx.filter(function (i) { return !d.domande[i]; }), 4, function (i) { return passo('domandeT', { indice: i }).then(aggiornaVista); }) : Promise.resolve())
+        .then(function () { if (!P.mappa || d.mappa) return; j.fase = 'Disegno la mappa…'; aggiornaVista(); return passo('mappaT'); }).then(ricarica);
+    }
     j.totali = 1 + n * 3 + 1; j.fatti = 1 + Object.keys(d.ricerca).length + Object.keys(d.capitoli).length + Object.keys(d.domande).length + (d.mappa ? 1 : 0);
     j.fase = 'Cerco fonti affidabili per ' + n + (n === 1 ? ' argomento…' : ' argomenti…'); aggiornaVista();
     return aParti(idx.filter(function (i) { return !d.ricerca[i]; }), 4, function (i) { return passo('ricerca', { indice: i }).then(aggiornaVista); })
@@ -263,10 +297,51 @@ function preparaQui(c) {
         return passo('mappa').then(ricarica);
       });
   }).then(function () {
-    c.stato = 'pronta'; salva(); delete JOBS[c.id]; toast('Dispensa pronta: ' + c.titolo); aggiornaVista();
+    c.stato = 'pronta'; salva(); delete JOBS[c.id]; toast('Pronto: ' + c.titolo); aggiornaVista();
   }).catch(function (e) {
     c.stato = 'parziale'; salva(); j.errore = erroreAI(e); ricarica().then(aggiornaVista);
   });
+}
+
+// ---------- MAPPA: centro, rami con foglie, linee colorate, collegamenti ----------
+function mappaHTML(d, c, conCapitoli) {
+  var M = d.mappa, rami = M.rami.slice(0, 6), n = rami.length, sopra = n >= 4 ? 2 : (n === 3 ? 1 : 0);
+  var nodo = function (r, k) {
+    var key = 'r' + k, gia = d.approfondimenti[key], largo = (k >= sopra && (n - sopra) % 2 === 1 && k === n - 1) || (k < sopra && sopra === 1);
+    return '<div class="node c' + ((k % 6) + 1) + (largo ? ' largo' : '') + '" data-k="' + k + '"><div class="nt"><span class="nn">' + (k + 1) + '</span><b>' + esc(r.titolo) + '</b></div>' +
+      '<div class="tx">' + marca(r.testo) + '</div>' + (r.foglie && r.foglie.length ? '<ul class="fo">' + r.foglie.map(function (f) { return '<li>' + marca(f) + '</li>'; }).join('') + '</ul>' : '') +
+      '<div class="nb">' + (conCapitoli && d.capitoli[r.capitolo - 1] ? '<button type="button" class="vai" data-vai="' + (r.capitolo - 1) + '">Cap. ' + r.capitolo + ' →</button>' : '') +
+      '<button type="button" class="ap" data-ap="' + key + '" data-cap="' + Math.max(0, r.capitolo - 1) + '" data-txt="' + esc(r.titolo + ': ' + String(r.testo).replace(/\[\[[gcru]\|([^\]]*)\]\]/g, '$1')) + '">' + (gia ? 'Approfondito ✓' : '+ Approfondisci') + '</button></div></div>';
+  };
+  var h = '<div class="paper mappa"><div class="mtop"><span class="lab">Mappa · parti dal centro e segui i colori</span></div>' +
+    '<div class="legend"><span><s style="background:var(--y)"></s>concetto chiave</span><span><s style="background:var(--b)"></s>definizione</span><span><s style="background:var(--r)"></s>trappola</span><span><u style="text-decoration-color:var(--u);text-decoration-thickness:2px">formula · dato</u></span></div>' +
+    '<div class="map"><svg class="linee" aria-hidden="true"></svg>' + rami.slice(0, sopra).map(function (r, k) { return nodo(r, k); }).join('') +
+    '<div class="core"><b>' + esc(M.centro || c.titolo) + '</b>' + (M.sottotitolo ? '<span>' + esc(M.sottotitolo) + '</span>' : '') + '</div>' +
+    rami.slice(sopra).map(function (r, k) { return nodo(r, k + sopra); }).join('') + '</div>';
+  if (M.collegamenti && M.collegamenti.length) h += '<div class="colleg"><span class="lab">Collegamenti tra i rami</span>' + M.collegamenti.map(function (x) {
+    return '<div><span class="cp"><i class="c' + (((x.da - 1) % 6) + 1) + '">' + x.da + '</i>⟷<i class="c' + (((x.a - 1) % 6) + 1) + '">' + x.a + '</i></span><span>' + esc(x.perche) + '</span></div>'; }).join('') + '</div>';
+  return h + '</div>';
+}
+function lineeMappa(map) {
+  if (!map) return;
+  var disegna = function () {
+    var svg = map.querySelector('svg.linee'), core = map.querySelector('.core'); if (!svg || !core || !map.offsetWidth) return;
+    var R = map.getBoundingClientRect(), C = core.getBoundingClientRect(), cx = C.left - R.left + C.width / 2, cTop = C.top - R.top, cBot = C.bottom - R.top, p = '', rr = 9;
+    svg.setAttribute('viewBox', '0 0 ' + R.width + ' ' + R.height); svg.style.height = R.height + 'px';
+    map.querySelectorAll('.node').forEach(function (nd) {
+      var B = nd.getBoundingClientRect(), x0 = B.left - R.left, x1 = B.right - R.left, y0 = B.top - R.top, col = getComputedStyle(nd).getPropertyValue('--cb').trim(), su = B.bottom - R.top <= cTop + 1, d;
+      if (nd.classList.contains('largo')) d = su ? 'M' + cx + ' ' + cTop + ' L' + cx + ' ' + (B.bottom - R.top) : 'M' + cx + ' ' + cBot + ' L' + cx + ' ' + y0;
+      else {
+        var sx = x1 < cx ? x1 : x0, dir = x1 < cx ? -1 : 1, y = y0 + 19, sy = su ? cTop : cBot, v = su ? 1 : -1;
+        var cs = cx + dir * 3; d = 'M' + cs + ' ' + sy + ' L' + cs + ' ' + (y + v * rr) + ' Q' + cs + ' ' + y + ' ' + (cs + dir * rr) + ' ' + y + ' L' + sx + ' ' + y;
+        p += '<circle cx="' + sx + '" cy="' + y + '" r="4" fill="' + col + '"/>';
+      }
+      p = '<path d="' + d + '" stroke="' + col + '"/>' + p;
+    });
+    svg.innerHTML = p + '<circle cx="' + cx + '" cy="' + cTop + '" r="3.5" fill="#0F2350"/><circle cx="' + cx + '" cy="' + cBot + '" r="3.5" fill="#0F2350"/>';
+  };
+  disegna(); setTimeout(disegna, 120); if (document.fonts && document.fonts.ready) document.fonts.ready.then(disegna);
+  if (!lineeMappa.su) { lineeMappa.su = true; window.addEventListener('resize', function () { var m = document.querySelector('#v-dispensa .map'); if (m) lineeMappa(m); }); }
 }
 
 // ---------- DISPENSA ----------
@@ -276,14 +351,13 @@ function vDispensa(cid) {
   if (!d) { v.innerHTML = '<div class="card"><span class="spin"></span></div>'; dispCarica(cid).then(function (x) { if (x && cur.view === 'dispensa') vDispensa(cid); else if (!x) v.innerHTML = '<div class="empty">Dispensa non trovata.</div>'; }); return; }
   var j = JOBS[cid], m = materia(c.materiaId), h = '<button class="back" data-b>← ' + esc(m ? m.nome : 'Studia') + '</button><h1 class="h1" style="font-size:28px">' + esc(c.titolo || d.titolo) + '</h1>';
   if (j) h += '<div class="dc lav"><div class="attesa">' + (j.errore ? '<b style="color:var(--kob)">Si è fermato: ' + esc(j.errore) + '</b>' : '<span class="spin"></span>' + esc(j.fase)) + '</div>' + fasi(j) + '<div class="bar"><i style="width:' + Math.round(j.fatti / Math.max(1, j.totali) * 100) + '%"></i></div></div>';
-  if (d.mappa && d.mappa.rami && d.mappa.rami.length) {
-    h += '<div class="paper"><div class="legend"><span><s style="background:var(--y)"></s>concetto chiave</span><span><s style="background:var(--b)"></s>definizione</span><span><s style="background:var(--r)"></s>attenzione</span><span><u style="text-decoration-color:var(--u);text-decoration-thickness:2px">formula</u></span></div>' +
-      '<div class="map"><div class="core">' + esc(d.mappa.centro || c.titolo) + '</div>' + d.mappa.rami.map(function (r, k) {
-        var key = 'r' + k, gia = d.approfondimenti[key];
-        return '<div class="node c' + ((k % 6) + 1) + '"><b>' + esc(r.titolo) + '</b><span>' + esc(r.testo) + '</span><button type="button" class="ap" data-ap="' + key + '" data-cap="' + Math.max(0, r.capitolo - 1) + '" data-txt="' + esc(r.titolo + ': ' + r.testo) + '">' + (gia ? 'Approfondito ✓' : '+ Approfondisci') + '</button></div>';
-      }).join('') + '</div></div>';
+  if (d.mappa && d.mappa.rami && d.mappa.rami.length) h += mappaHTML(d, c, partiDi(c).dispensa);
+  var pp = partiDi(c);
+  if (!pp.dispensa && d.argomenti.length) {
+    h += '<div class="paper"><span class="lab">Argomenti del testo</span>' + d.argomenti.map(function (a, i) { var nd = ((d.domande[i] || {}).crocette || []).length; return '<p style="margin:8px 0"><span class="n" style="display:inline-grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--blu);color:#fff;font-weight:700;font-size:13px;margin-right:8px">' + (i + 1) + '</span><b>' + esc(a.titolo) + '</b>' + (nd ? ' <span class="note">· ' + nd + ' domande</span>' : '') + '<br><span class="note">' + esc(a.descrizione || '') + '</span></p>'; }).join('') + '</div>';
+    if (!j) h += '<div class="row" style="gap:10px;flex-wrap:wrap">' + (!pp.test ? '<button class="btn small" data-agg="' + cid + ':test">+ Crea il test</button>' : '') + (!pp.mappa ? '<button class="btn small" data-agg="' + cid + ':mappa">+ Crea la mappa</button>' : '') + '<button class="btn ghost small" data-agg="' + cid + ':dispensa" style="color:var(--blu)">Crea la dispensa completa</button></div>';
   }
-  d.argomenti.forEach(function (a, i) {
+  if (pp.dispensa) d.argomenti.forEach(function (a, i) {
     var cp = d.capitoli[i];
     if (!cp) { h += '<div class="paper c' + ((i % 6) + 1) + '" style="opacity:.75"><h3><span class="n">' + (i + 1) + '</span>' + esc(a.titolo) + '</h3><div class="attesa">' + (j && !j.errore ? '<span class="spin"></span>In scrittura…' : 'Non ancora scritto') + '</div></div>'; return; }
     h += '<div class="paper c' + ((i % 6) + 1) + '" id="cap' + i + '"><h3><span class="n">' + (i + 1) + '</span>' + esc(cp.titolo) + '</h3>';
@@ -303,12 +377,15 @@ function vDispensa(cid) {
     h += '<div class="srcs"><span class="t">Fonti</span>' + (mie.length ? mie.map(function (n) { var f = (d.fonti || []).find(function (x) { return x.n === n; }); return f ? '<span>[' + n + '] <a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.titolo) + '</a>' + (f.sito ? ' · ' + esc(f.sito) : '') + '</span>' : ''; }).join('') : '<span>Nessuna fonte affidabile trovata: il capitolo si basa sui tuoi appunti.</span>') + '</div></div>';
   });
   var nq = domandeDi(cid).length;
-  if (nq) h += '<button class="btn v" data-ver>Fai il test su questa dispensa · ' + nq + ' domande</button>';
-  h += '<button class="linkap" data-del style="color:var(--kob);align-self:center">Elimina questa dispensa</button>';
+  if (nq) h += '<button class="btn v" data-ver>Fai il test · ' + nq + ' domande</button>';
+  h += '<button class="linkap" data-del style="color:var(--kob);align-self:center">Elimina' + (pp.dispensa ? ' questa dispensa' : '') + '</button>';
   v.innerHTML = h;
+  lineeMappa(v.querySelector('.map'));
+  v.querySelectorAll('[data-vai]').forEach(function (b) { b.onclick = function () { var x = $('cap' + b.dataset.vai); if (x) x.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
   v.querySelector('[data-b]').onclick = function () { mostra('studia'); };
   v.querySelectorAll('[data-ap]').forEach(function (b) { b.onclick = function () { approfondisci(c, d, b.dataset.ap, +b.dataset.cap, b.dataset.txt); }; });
   v.querySelectorAll('[data-fonte]').forEach(function (b) { b.onclick = function () { mostraFonte(d, +b.dataset.fonte); }; });
+  v.querySelectorAll('[data-agg]').forEach(function (b) { b.onclick = function () { aggiungiParte(b.dataset.agg); }; });
   var ver = v.querySelector('[data-ver]'); if (ver) ver.onclick = function () { avviaTest({ tipo: 'verifica', cid: cid }); };
   v.querySelector('[data-del]').onclick = function () {
     if (!confirm('Eliminare questa dispensa?')) return;

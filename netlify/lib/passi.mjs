@@ -45,9 +45,15 @@ ${MARCATORI}
 ${ONESTA}
 Rispondi SOLO con JSON: {"titolo": "...", "paragrafi": ["..."], "esempio": "...", "trappola": "...", "ricorda": "...", "confronto": [{"tipo": "ok|incompleto|diverso", "testo": "..."}], "collegati": ["titoli di altri argomenti dell'elenco collegati a questo"]}`,
 
-  mappa: `Ricevi i capitoli di una dispensa universitaria. Crea una mappa concettuale: un concetto centrale e da 3 a 6 rami.
-Ogni ramo: un titolo di poche parole e una frase brevissima (massimo 12 parole), con il numero del capitolo a cui rimanda.
-Rispondi SOLO con JSON: {"centro": "...", "rami": [{"titolo": "...", "testo": "...", "capitolo": 1}]}`,
+  mappa: `Ricevi i capitoli di una dispensa universitaria. Crea una mappa concettuale.
+Rendila COMPLETA e da studio: deve bastare da sola per ripassare tutto l'argomento.
+- "centro": il tema in massimo 5 parole; "sottotitolo": una riga che dice di cosa parla.
+- da 4 a 6 rami, i concetti principali, nell'ordine in cui conviene studiarli. Ogni ramo ha:
+  "titolo" (massimo 5 parole); "testo" (massimo 22 parole) che spiega il concetto e usa i segni: [[g|concetto chiave]], [[c|definizione]], [[r|trappola o errore tipico]], [[u|formula o dato da ricordare]], almeno un segno per ramo;
+  "foglie": da 2 a 4 sotto-punti da sapere (massimo 9 parole ciascuno: elementi, tipi, esempi, eccezioni, autori, date);
+  "capitolo": il numero del capitolo/argomento a cui rimanda.
+- "collegamenti": da 1 a 3 legami tra rami diversi, {"da": numero ramo, "a": numero ramo, "perche": massimo 12 parole}.
+Rispondi SOLO con JSON: {"centro": "...", "sottotitolo": "...", "rami": [{"titolo": "...", "testo": "...", "foglie": ["..."], "capitolo": 1}], "collegamenti": [{"da": 1, "a": 2, "perche": "..."}]}`,
 
   domande: `Sei un docente universitario che prepara l'esame. Dal capitolo che ricevi crea:
 - 6 domande a crocette con 4 alternative brevi (massimo 12 parole), una sola giusta, alternative sbagliate plausibili; per ognuna una spiegazione di massimo 30 parole;
@@ -65,6 +71,23 @@ Per citare usa i numeri delle fonti già note [n]; per una fonte nuova trovata c
 ${MARCATORI}
 ${ONESTA}
 Rispondi SOLO con JSON: {"titolo": "...", "paragrafi": ["..."], "esempi": ["..."], "collegamenti": ["..."], "nuove": [{"url": "...", "titolo": "..."}], "crocette": [{"testo": "...", "opzioni": ["...","...","...","..."], "giusta": 0, "spiegazione": "...", "fonte": "[1]"}]}`,
+
+  domandeT: `Sei un docente universitario che prepara l'esame. Ricevi un testo di studio già pronto (appunti o dispensa) e un argomento.
+Usando SOLO la parte del testo che riguarda quell'argomento, crea:
+- 6 domande a crocette con 4 alternative brevi (massimo 12 parole), una sola giusta, alternative sbagliate plausibili; per ognuna una spiegazione di massimo 30 parole;
+- 2 domande per l'orale, ognuna con 3-4 punti chiave brevi (massimo 10 parole).
+Non aggiungere nulla che il testo non dica. Nel campo "fonte" scrivi "appunti".
+Rispondi SOLO con JSON: {"crocette": [{"testo": "...", "opzioni": ["...","...","...","..."], "giusta": 0, "spiegazione": "...", "fonte": "appunti"}], "orali": [{"domanda": "...", "punti": ["..."]}]}`,
+
+  mappaT: `Ricevi un testo di studio già pronto (appunti o dispensa) e l'elenco dei suoi argomenti. Crea una mappa concettuale fedele al testo: niente che il testo non dica.
+Rendila COMPLETA e da studio: deve bastare da sola per ripassare tutto l'argomento.
+- "centro": il tema in massimo 5 parole; "sottotitolo": una riga che dice di cosa parla.
+- da 4 a 6 rami, i concetti principali, nell'ordine in cui conviene studiarli. Ogni ramo ha:
+  "titolo" (massimo 5 parole); "testo" (massimo 22 parole) che spiega il concetto e usa i segni: [[g|concetto chiave]], [[c|definizione]], [[r|trappola o errore tipico]], [[u|formula o dato da ricordare]], almeno un segno per ramo;
+  "foglie": da 2 a 4 sotto-punti da sapere (massimo 9 parole ciascuno: elementi, tipi, esempi, eccezioni, autori, date);
+  "capitolo": il numero del capitolo/argomento a cui rimanda.
+- "collegamenti": da 1 a 3 legami tra rami diversi, {"da": numero ramo, "a": numero ramo, "perche": massimo 12 parole}.
+Rispondi SOLO con JSON: {"centro": "...", "sottotitolo": "...", "rami": [{"titolo": "...", "testo": "...", "foglie": ["..."], "capitolo": 1}], "collegamenti": [{"da": 1, "a": 2, "perche": "..."}]}`,
 
   orale: `Sei il presidente di una commissione d'esame universitario italiano. Conduci un orale breve su una domanda della materia indicata.
 Parli A VOCE: frasi brevi, italiano parlato, niente elenchi né simboli.
@@ -99,18 +122,18 @@ export async function esegui(b) {
   // --- già pronto? Allora non si spende nulla.
   const salvato = passo === "argomenti" ? (d.argomenti && d.argomenti.length ? { titolo: d.titolo, argomenti: d.argomenti } : null)
     : passo === "ricerca" ? d.ricerca[i] : passo === "capitolo" ? d.capitoli[i] : passo === "mappa" ? d.mappa
-    : passo === "domande" ? d.domande[i] : passo === "approfondisci" ? d.approfondimenti[s(b.chiave, 80)] : null;
+    : passo === "domande" || passo === "domandeT" ? d.domande[i] : passo === "mappaT" ? d.mappa : passo === "approfondisci" ? d.approfondimenti[s(b.chiave, 80)] : null;
   if (salvato) return json({ ok: true, gia: true, usd: 0, dato: salvato });
 
   // --- interruttore e tetto
   if (!(await aiAccesa())) return json({ error: "spenta" }, 503);
   const arg = (d.argomenti || [])[i];
-  if (["ricerca", "capitolo", "domande"].includes(passo) && !arg) return json({ error: "bad" }, 400);
+  if (["ricerca", "capitolo", "domande", "domandeT"].includes(passo) && !arg) return json({ error: "bad" }, 400);
   // i capitoli citano le fonti con numeri che valgono per tutta la dispensa: prima servono tutte le ricerche
   if (passo === "capitolo" && d.argomenti.some((a, k) => !d.ricerca[k])) return json({ error: "prima le fonti" }, 409);
   if (passo === "approfondisci" && !/^[a-z0-9]{1,20}$/.test(String(b.chiave || ""))) return json({ error: "bad" }, 400);
   const stima = stimaPassaggio(passo, {
-    caratteri: passo === "argomenti" || passo === "capitolo" ? testo.length : 0,
+    caratteri: ["argomenti", "capitolo", "domandeT", "mappaT"].includes(passo) ? testo.length : 0,
     ricerche: passo === "ricerca" ? RICERCHE_PER_ARGOMENTO : passo === "approfondisci" ? RICERCHE_APPROFONDISCI : 0,
     cacheLetta: passo === "capitolo" && i > 0,
   });
@@ -146,6 +169,12 @@ export async function esegui(b) {
       const corpo = [c.titolo, ...(c.paragrafi || []), "Esempio: " + c.esempio, "Trappola: " + c.trappola, "Da ricordare: " + c.ricorda].join("\n");
       chiaveCache = "dom/" + (await sha(corpo));
       chiamata = { modello: ECONOMICO, istruzioni: P.domande, testo: `Materia: ${s(d.materia, 120)}\n\nCAPITOLO:\n${corpo}\n\nFONTI:\n${fontiTesto()}`, max: USCITA.domande };
+    } else if (passo === "domandeT") {
+      chiaveCache = "domT/" + (await sha(testo + "|" + arg.titolo));
+      chiamata = { modello: ECONOMICO, istruzioni: P.domandeT, testo: `Materia: ${s(d.materia, 120)}\nArgomento: ${arg.titolo} (${arg.descrizione})\n\nTESTO:\n${testo}`, max: USCITA.domandeT };
+    } else if (passo === "mappaT") {
+      chiaveCache = "mapT/" + (await sha(testo));
+      chiamata = { modello: ECONOMICO, istruzioni: P.mappaT, testo: `Materia: ${s(d.materia, 120)}\nArgomenti:\n${titoliArg}\n\nTESTO:\n${testo}`, max: USCITA.mappaT };
     } else if (passo === "approfondisci") {
       const chiave = s(b.chiave, 80), parte = s(b.parte, 2500), cap = d.capitoli[Math.max(0, Number(b.capitolo) || 0)];
       if (!chiave || !parte) return json({ error: "bad" }, 400);
@@ -216,10 +245,12 @@ export async function esegui(b) {
         collegati: lista(o.collegati, 5, 140),
       };
       await salvaPezzo(uid, cid, "capitolo/" + i, dato);
-    } else if (passo === "mappa") {
-      dato = { centro: s(o.centro, 60), rami: (Array.isArray(o.rami) ? o.rami : []).slice(0, 6).map((r) => ({ titolo: s(r && r.titolo, 50), testo: s(r && r.testo, 110), capitolo: Math.max(1, Number(r && r.capitolo) || 1) })).filter((r) => r.titolo) };
+    } else if (passo === "mappa" || passo === "mappaT") {
+      const rami = (Array.isArray(o.rami) ? o.rami : []).slice(0, 6).map((r) => ({ titolo: s(r && r.titolo, 50), testo: s(r && r.testo, 260).replace(/\[\d+\]/g, ""), foglie: lista(r && r.foglie, 4, 90), capitolo: Math.max(1, Number(r && r.capitolo) || 1) })).filter((r) => r.titolo);
+      dato = { centro: s(o.centro, 60), sottotitolo: s(o.sottotitolo, 140), rami,
+        collegamenti: (Array.isArray(o.collegamenti) ? o.collegamenti : []).slice(0, 3).map((c) => ({ da: Number(c && c.da) || 0, a: Number(c && c.a) || 0, perche: s(c && c.perche, 120) })).filter((c) => c.da >= 1 && c.a >= 1 && c.da <= rami.length && c.a <= rami.length && c.da !== c.a && c.perche) };
       await salvaPezzo(uid, cid, "mappa", dato);
-    } else if (passo === "domande") {
+    } else if (passo === "domande" || passo === "domandeT") {
       dato = { crocette: crocetteOk(o.crocette, 10), orali: (Array.isArray(o.orali) ? o.orali : []).slice(0, 3).map((x) => ({ domanda: s(x && x.domanda, 300), punti: lista(x && x.punti, 6, 200) })).filter((x) => x.domanda) };
       await salvaPezzo(uid, cid, "domande/" + i, dato);
     } else if (passo === "approfondisci") {

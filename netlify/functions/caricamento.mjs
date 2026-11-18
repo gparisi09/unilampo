@@ -4,6 +4,8 @@ import { assembla, leggiMeta, salvaMeta, eliminaTutto } from "../lib/dispensa.mj
 
 // POST: salva gli appunti di un caricamento (testo già estratto dal PDF sul telefono) e crea la dispensa vuota.
 // GET: restituisce la dispensa ricomposta dai suoi pezzi. DELETE: elimina caricamento, dispensa e pezzi.
+// Cosa preparare: dispensa completa, test, mappa (anche insieme). Di base la dispensa completa.
+export const parti = (p) => { p = p || {}; const o = { dispensa: p.dispensa === true, test: p.test === true, mappa: p.mappa === true }; return o.dispensa || o.test || o.mappa ? o : { dispensa: true, test: false, mappa: false }; };
 const s = (v, n) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 export default async (req) => {
   const url = new URL(req.url);
@@ -25,7 +27,7 @@ export default async (req) => {
   const k = `${b.uid}/${b.cid}`;
   if (await leggiMeta(b.uid, b.cid)) return json({ error: "esiste" }, 409);
   await store("testi").set(k, testo);
-  await salvaMeta(b.uid, b.cid, { materia: s(b.materia, 120), titolo: s(b.titolo, 120), file: s(b.file, 160), caratteri: testo.length, creato: new Date().toISOString(), argomenti: [] });
+  await salvaMeta(b.uid, b.cid, { materia: s(b.materia, 120), titolo: s(b.titolo, 120), file: s(b.file, 160), caratteri: testo.length, creato: new Date().toISOString(), argomenti: [], parti: parti(b.parti) });
   return json({ ok: true, caratteri: testo.length, tagliato });
 };
 export const config = { path: "/api/caricamento" };

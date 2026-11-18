@@ -31,10 +31,10 @@ export const MAX_CARATTERI_APPUNTI = 60000;
 
 // Token massimi in uscita per ogni passaggio (fanno anche da base della stima).
 // Margine ampio: si pagano solo i token davvero scritti, e una risposta tagliata a metà sarebbe illeggibile.
-export const USCITA = { argomenti: 1200, ricerca: 1800, capitolo: 2600, mappa: 1000, domande: 3200, approfondisci: 2200, orale: 900 };
+export const USCITA = { argomenti: 1200, ricerca: 1800, capitolo: 2600, mappa: 2000, domande: 3200, approfondisci: 2200, orale: 900 , domandeT: 3200, mappaT: 2000 };
 
 // Stima dei token in ingresso che non dipendono dagli appunti (istruzioni, fonti, risultati della ricerca).
-export const INGRESSO_FISSO = { argomenti: 500, ricerca: 1500, capitolo: 2500, mappa: 3000, domande: 3500, approfondisci: 3500, orale: 1500 };
+export const INGRESSO_FISSO = { argomenti: 500, ricerca: 1500, capitolo: 2500, mappa: 3000, domande: 3500, approfondisci: 3500, orale: 1500 , domandeT: 800, mappaT: 600 };
 export const TOKEN_PER_RICERCA = 7000; // i risultati di una ricerca web entrano nel prompt: stima prudente
 
 export const CARATTERI_PER_TOKEN = 3; // prudente per l'italiano
