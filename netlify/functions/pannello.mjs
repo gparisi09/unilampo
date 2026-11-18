@@ -36,7 +36,9 @@ export default async (req) => {
   } catch {}
   tester.sort((a, b) => (b.agg || 0) - (a.agg || 0));
 
+  const ultimoErrore = await store("config").get("ultimoErrore", { type: "json" }).catch(() => null);
   return json({
+    ultimoErrore,
     accesa: await aiAccesa(), chiave: chiavePropria(), tetto: R.TETTO_GIORNO, oggi: og, giorni, tester,
     regole: { ECONOMICO: R.ECONOMICO, COSTOSO: R.COSTOSO, PREZZI: R.PREZZI, PREZZO_RICERCA: R.PREZZO_RICERCA, MAX_FONTI_PER_ARGOMENTO: R.MAX_FONTI_PER_ARGOMENTO, RICERCHE_PER_ARGOMENTO: R.RICERCHE_PER_ARGOMENTO, MAX_ARGOMENTI: R.MAX_ARGOMENTI },
   });

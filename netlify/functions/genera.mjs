@@ -234,7 +234,15 @@ export default async (req) => {
     return json({ ok: true, usd, gia: usd === 0, dato, fonti: d.fonti });
   } catch (e) {
     if (e && e.message === "parse") return json({ error: "parse" }, 502);
-    if (e && e.message === "upstream") return json({ error: "upstream", status: e.status }, 502);
+    if (e && e.message === "upstream") {
+      // Il motivo resta nei log di Netlify e nel pannello (mai la chiave: Anthropic non la rimanda indietro).
+      const d = String(e.dettaglio || ""), motivo = e.status === 401 ? "chiave non valida" : /credit balance/i.test(d) ? "credito Anthropic esaurito"
+        : e.status === 404 || /model/i.test(d) && e.status === 400 ? "modello o strumento non disponibile" : e.status === 429 ? "troppe richieste ad Anthropic" : e.status >= 500 ? "Anthropic momentaneamente non disponibile" : "richiesta rifiutata da Anthropic";
+      console.error("anthropic", passo, e.status, d);
+      await store("config").setJSON("ultimoErrore", { quando: new Date().toISOString(), passo, status: e.status, motivo, dettaglio: d.slice(0, 300) }).catch(() => {});
+      return json({ error: "upstream", status: e.status }, 502);
+    }
+    console.error("genera", passo, e && e.stack);
     return json({ error: "errore" }, 500);
   }
 };
