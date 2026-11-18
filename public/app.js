@@ -37,7 +37,8 @@ var DISP = {};
 function dispLocale(cid) { if (DISP[cid]) return DISP[cid]; try { var d = JSON.parse(localStorage.getItem('ul-d-' + cid) || 'null'); if (d) DISP[cid] = d; return d; } catch (e) { return null; } }
 function dispSalva(cid, d) { DISP[cid] = d; try { localStorage.setItem('ul-d-' + cid, JSON.stringify(d)); } catch (e) {} }
 function dispCarica(cid) {
-  var loc = dispLocale(cid);
+  var loc = dispLocale(cid), cc = S.caricamenti.find(function (k) { return k.id === cid; });
+  if (cc && cc.condivisa) return api('/api/gruppi?s=' + cc.condivisa).then(function (r) { cc.tolta = false; dispSalva(cid, r.dispensa); return r.dispensa; }).catch(function (e) { if (e && e.status === 404) cc.tolta = true; return loc; });
   return api('/api/caricamento?uid=' + S.uid + '&cid=' + cid).then(function (r) { dispSalva(cid, r.dispensa); return r.dispensa; }).catch(function () { return loc; });
 }
 
@@ -54,14 +55,14 @@ function erroreAI(e) {
 
 
 // ---------- navigazione: 3 sezioni, niente pagine dentro pagine ----------
-var cur = { view: 'studia', tab: 'studia' }, VIEWS = ['studia', 'dispensa', 'test', 'orale'];
-var TABOF = { studia: 'studia', dispensa: 'studia', test: 'test', orale: 'orale' };
+var cur = { view: 'studia', tab: 'studia' }, VIEWS = ['studia', 'dispensa', 'test', 'orale', 'gruppi'];
+var TABOF = { studia: 'studia', dispensa: 'studia', test: 'test', orale: 'orale', gruppi: 'gruppi' };
 function mostra(v, arg) {
   if (cur.view === 'orale' && v !== 'orale') fermaOrale();
   cur.view = v; cur.arg = arg; cur.tab = TABOF[v];
   VIEWS.forEach(function (x) { $('v-' + x).classList.toggle('on', x === v); });
   document.querySelectorAll('nav.tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === cur.tab); });
-  ({ studia: vStudia, dispensa: vDispensa, test: vTest, orale: vOrale })[v](arg);
+  ({ studia: vStudia, dispensa: vDispensa, test: vTest, orale: vOrale, gruppi: vGruppi })[v](arg);
   window.scrollTo(0, 0);
 }
 function rerender() { var y = window.scrollY; mostra(cur.view, cur.arg); window.scrollTo(0, y); }
@@ -225,6 +226,152 @@ function impostaTema(t) { try { localStorage.setItem('ul-tema', t); } catch (e) 
 applicaTema();
 if (window.matchMedia) { var mq = matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', applicaTema); }
 
+// ---------- GRUPPI: chi pubblica cosa e quando ----------
+function fa(iso) { var m = Math.round((Date.now() - new Date(iso)) / 60000); if (m < 1) return 'adesso'; if (m < 60) return m + ' min fa'; var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' ora fa' : ' ore fa'); var g = Math.round(h / 24); return g === 1 ? 'ieri' : g < 7 ? g + ' giorni fa' : giornoIt(iso); }
+function chiediNome(poi) {
+  if (S.nome) return poi(S.nome);
+  sheet('<h2 style="font-size:22px">Come ti chiami nei gruppi?</h2><span style="font-size:14px">Gli altri vedranno solo questo nome accanto a quello che pubblichi. Il tuo codice resta privato.</span><div class="field"><label for="gn">Il tuo nome</label><input id="gn" maxlength="30" placeholder="es. Giulia" autocomplete="off"></div><button class="btn" id="gn-ok">Continua</button><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
+    r.querySelector('[data-close]').onclick = chiudiSheet; var i = $('gn'); setTimeout(function () { if (document.body.contains(i)) i.focus(); }, 120);
+    var ok = function () { var n = i.value.trim(); if (!n) return; S.nome = n; salva(); chiudiSheet(); setTimeout(function () { poi(n); }, 250); };
+    $('gn-ok').onclick = ok; i.onkeydown = function (e) { if (e.key === 'Enter') ok(); };
+  });
+}
+function ricordaGruppo(g) { if (!S.gruppi) S.gruppi = []; var x = S.gruppi.find(function (k) { return k.gid === g.gid; }); if (x) { x.nome = g.nome; x.codice = g.codice; } else S.gruppi.push({ gid: g.gid, nome: g.nome, codice: g.codice }); salva(); }
+var GRUPPI = {};
+function creaGruppo() {
+  chiediNome(function (io) {
+    sheet('<h2 style="font-size:22px">Nuovo gruppo</h2><span style="font-size:14px">Per il tuo corso o per chi prepara il tuo stesso esame. Poi mandi il codice d\'invito agli altri.</span><div class="field"><label for="gnm">Nome del gruppo</label><input id="gnm" maxlength="60" placeholder="es. Microeconomia · prof. Rossi" autocomplete="off"></div><button class="btn" id="gnm-ok">Crea il gruppo</button><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
+      r.querySelector('[data-close]').onclick = chiudiSheet; setTimeout(function () { var x = $('gnm'); if (x) x.focus(); }, 120);
+      $('gnm-ok').onclick = function () { var n = $('gnm').value.trim(); if (!n) return; api('/api/gruppi', { azione: 'crea', uid: S.uid, nome: n, mioNome: io }).then(function (x) { GRUPPI[x.gruppo.gid] = x.gruppo; ricordaGruppo(x.gruppo); chiudiSheet(); mostra('gruppi', x.gruppo.gid); invita(x.gruppo); }).catch(function () { toast('Non riesco a creare il gruppo.'); }); };
+    });
+  });
+}
+function entraGruppo(codice) {
+  chiediNome(function (io) {
+    sheet('<h2 style="font-size:22px">Entra in un gruppo</h2><div class="field"><label for="gc">Codice d\'invito</label><input id="gc" maxlength="12" placeholder="es. K7MQ2XHP" autocomplete="off" autocapitalize="characters" value="' + esc(codice || '') + '" style="text-transform:uppercase;letter-spacing:.12em;font-weight:700"></div><button class="btn" id="gc-ok">Entra</button><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
+      r.querySelector('[data-close]').onclick = chiudiSheet;
+      $('gc-ok').onclick = function () { api('/api/gruppi', { azione: 'entra', uid: S.uid, codice: $('gc').value, mioNome: io }).then(function (x) { GRUPPI[x.gruppo.gid] = x.gruppo; ricordaGruppo(x.gruppo); chiudiSheet(); toast('Sei nel gruppo ' + x.gruppo.nome); mostra('gruppi', x.gruppo.gid); }).catch(function (e) { toast(e && e.error === 'pieno' ? 'Il gruppo è pieno.' : 'Codice non valido.'); }); };
+    });
+  });
+}
+function linkInvito(g) { return location.origin + '/?g=' + g.codice; }
+function copia(t, msg) { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast(msg || 'Copiato'); }).catch(function () { prompt('Copia questo testo:', t); }); }
+function invita(g) {
+  var testo = 'Entra nel gruppo «' + g.nome + '» su UniLampo: ' + linkInvito(g) + ' (codice ' + g.codice + ')';
+  sheet('<span class="lab">Invita nel gruppo</span><h2 style="font-size:22px">' + esc(g.nome) + '</h2><div class="codiceg">' + esc(g.codice) + '</div><span style="font-size:14px">Manda il link o il codice a chi vuoi nel gruppo. Chi entra vede cosa pubblicate e quando.</span>' +
+    (navigator.share ? '<button class="btn" id="iv-sh">Invia il link…</button>' : '') + '<button class="btn ' + (navigator.share ? 'ghost' : '') + '" id="iv-cp"' + (navigator.share ? ' style="color:var(--blu)"' : '') + '>Copia il link d\'invito</button><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) {
+    r.querySelector('[data-close]').onclick = chiudiSheet;
+    $('iv-cp').onclick = function () { copia(testo, 'Link d\'invito copiato'); };
+    var sh = $('iv-sh'); if (sh) sh.onclick = function () { navigator.share({ title: 'UniLampo', text: testo }).catch(function () {}); };
+  });
+}
+function caricaGruppo(gid) {
+  return api('/api/gruppi?uid=' + S.uid + '&gid=' + gid).then(function (x) { GRUPPI[gid] = x.gruppo; ricordaGruppo(x.gruppo); return x.gruppo; })
+    .catch(function (e) { if (e && e.status === 404) { S.gruppi = (S.gruppi || []).filter(function (k) { return k.gid !== gid; }); salva(); } throw e; });
+}
+function vGruppi(gid) {
+  var v = $('v-gruppi');
+  if (gid) return vGruppo(gid);
+  var lista = S.gruppi || [], h = '<h1 class="h1">Gruppi</h1>';
+  h += '<div class="hero"><span class="lab">Studiate insieme</span><h2>' + (lista.length ? 'I tuoi gruppi' : 'Crea il tuo gruppo') + '</h2><span style="color:#D6E6F5;font-size:14px">Con chi segue il tuo corso: ognuno pubblica le sue dispense, tutti vedono chi ha pubblicato cosa e quando, e le aggiungono alle proprie con un tocco.</span><div class="row"><button class="btn" data-crea>+ Crea un gruppo</button><button class="btn ghost" data-entra style="color:#fff;border-color:#fff">Ho un codice</button></div></div>';
+  lista.forEach(function (g) { var x = GRUPPI[g.gid]; h += '<button class="dc grp" data-g="' + g.gid + '"><span class="gi">' + esc(g.nome.slice(0, 1).toUpperCase()) + '</span><span style="flex:1"><h3>' + esc(g.nome) + '</h3><span class="note">' + (x ? x.membri.length + (x.membri.length === 1 ? ' persona' : ' persone') + ' · ' + x.voci.length + (x.voci.length === 1 ? ' dispensa' : ' dispense') + (x.voci[0] ? ' · ultima ' + fa(x.voci[0].data) : '') : 'Tocca per aprire') + '</span></span><span class="go">›</span></button>'; });
+  if (!lista.length) h += '<div class="empty"><b>Ancora nessun gruppo</b><span>Crea un gruppo e manda il codice ai compagni, oppure inserisci il codice che ti hanno dato.</span></div>';
+  if (S.nome) h += '<div class="foot"><span>Nei gruppi ti chiami <b>' + esc(S.nome) + '</b></span><button type="button" data-nome>Cambia nome</button></div>';
+  v.innerHTML = h;
+  v.querySelector('[data-crea]').onclick = creaGruppo;
+  v.querySelector('[data-entra]').onclick = function () { entraGruppo(); };
+  var nm = v.querySelector('[data-nome]'); if (nm) nm.onclick = function () { var vecchio = S.nome; S.nome = ''; chiediNome(function () { rerender(); }); if (!S.nome) S.nome = vecchio; };
+  v.querySelectorAll('[data-g]').forEach(function (b) { b.onclick = function () { mostra('gruppi', b.dataset.g); }; });
+  lista.forEach(function (g) { if (!GRUPPI[g.gid]) caricaGruppo(g.gid).then(function () { if (cur.view === 'gruppi' && !cur.arg) vGruppi(); }).catch(function () {}); });
+}
+function vGruppo(gid) {
+  var v = $('v-gruppi'), g = GRUPPI[gid];
+  if (!g) { v.innerHTML = '<div class="card"><span class="spin"></span></div>'; caricaGruppo(gid).then(function () { if (cur.view === 'gruppi' && cur.arg === gid) vGruppo(gid); }).catch(function () { v.innerHTML = '<div class="empty"><b>Gruppo non disponibile</b><span>Forse ne sei uscita o il codice non è più valido.</span></div>'; }); return; }
+  var h = '<button class="back" data-b>← Gruppi</button><h1 class="h1" style="font-size:30px">' + esc(g.nome) + '</h1>';
+  h += '<div class="row" style="gap:10px;flex-wrap:wrap"><button class="btn" data-pubblica>+ Pubblica una tua dispensa</button><button class="btn ghost" data-invita style="color:var(--blu)">Invita · ' + esc(g.codice) + '</button></div>';
+  h += '<div class="sez">Chi ha pubblicato cosa <small>' + g.voci.length + '</small></div>';
+  if (!g.voci.length) h += '<div class="empty"><b>Ancora niente</b><span>Pubblica la prima dispensa: gli altri la vedranno qui, con il tuo nome e la data.</span></div>';
+  g.voci.forEach(function (x) {
+    var mia = S.caricamenti.find(function (c) { return c.condivisa === x.sid; });
+    h += '<div class="dc voce"><div class="vh"><span class="gi small">' + esc((x.nome || '?').slice(0, 1).toUpperCase()) + '</span><span><b>' + esc(x.mia ? 'Tu' : x.nome) + '</b> ha pubblicato <span class="note">· ' + fa(x.data) + '</span></span></div><h3>' + esc(x.titolo) + '</h3><span class="note">' + esc(x.materia || '') + (x.capitoli ? ' · ' + x.capitoli + ' capitoli' : '') + (x.domande ? ' · ' + x.domande + ' domande' : '') + ' · ' + new Date(x.data).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }) + '</span>' +
+      (x.mia ? '<div class="row"><span class="tag grey">La tua</span><button class="linkap" data-revoca="' + x.sid + '" style="color:var(--kob)">Togli dal gruppo</button></div>' : '<div class="row"><button class="btn ' + (mia ? 'ghost' : 'v') + ' small" data-prendi="' + x.sid + '"' + (mia ? ' style="color:var(--blu)"' : '') + '>' + (mia ? 'Apri' : 'Aggiungi alle mie dispense') + '</button></div>') + '</div>';
+  });
+  h += '<div class="sez">Nel gruppo <small>' + g.membri.length + '</small></div><div class="card" style="flex-direction:row;flex-wrap:wrap;gap:8px">' + g.membri.map(function (m) { return '<span class="membro">' + esc(m.nome) + (m.io ? ' (tu)' : '') + '</span>'; }).join('') + '</div>';
+  h += '<button class="linkap" data-esci style="color:var(--kob);align-self:center">Esci dal gruppo</button>';
+  v.innerHTML = h;
+  v.querySelector('[data-b]').onclick = function () { mostra('gruppi'); };
+  v.querySelector('[data-invita]').onclick = function () { invita(g); };
+  v.querySelector('[data-pubblica]').onclick = function () { scegliDaPubblicare(g); };
+  v.querySelector('[data-esci]').onclick = function () { if (!confirm('Uscire dal gruppo ' + g.nome + '? Le dispense che hai aggiunto restano tue.')) return; api('/api/gruppi', { azione: 'esci', uid: S.uid, gid: gid }).catch(function () {}); S.gruppi = (S.gruppi || []).filter(function (k) { return k.gid !== gid; }); delete GRUPPI[gid]; salva(); mostra('gruppi'); };
+  v.querySelectorAll('[data-prendi]').forEach(function (b) { b.onclick = function () { var x = g.voci.find(function (k) { return k.sid === b.dataset.prendi; }); prendiCondivisa(x.sid, { autore: x.nome, titolo: x.titolo, materia: x.materia, gruppo: g.nome }); }; });
+  v.querySelectorAll('[data-revoca]').forEach(function (b) { b.onclick = function () { if (!confirm('Togliere la dispensa dal gruppo? Chi l\'ha aggiunta non la vedrà più.')) return; api('/api/gruppi', { azione: 'revoca', uid: S.uid, sid: b.dataset.revoca }).then(function () { S.condivisioni = (S.condivisioni || []).filter(function (k) { return k.sid !== b.dataset.revoca; }); salva(); return caricaGruppo(gid); }).then(function () { vGruppo(gid); toast('Tolta dal gruppo'); }).catch(function () { toast('Non riesco a toglierla.'); }); }; });
+  if (!vGruppo.ora) vGruppo.ora = {};
+  if (Date.now() - (vGruppo.ora[gid] || 0) > 8000) { vGruppo.ora[gid] = Date.now(); caricaGruppo(gid).then(function () { if (cur.view === 'gruppi' && cur.arg === gid) vGruppo(gid); }).catch(function () {}); }
+}
+function mieDispensePubblicabili() { return S.caricamenti.filter(function (c) { return !c.condivisa && c.stato === 'pronta'; }); }
+function scegliDaPubblicare(g) {
+  var lista = mieDispensePubblicabili();
+  if (!lista.length) return toast('Prima prepara una dispensa in Studia.');
+  sheet('<span class="lab">Pubblica in ' + esc(g.nome) + '</span><h2 style="font-size:22px">Quale dispensa?</h2><div style="display:flex;flex-direction:column;gap:8px">' + lista.map(function (c) { var m = materia(c.materiaId); return '<button class="li" data-pc="' + c.id + '"><span><b>' + esc(c.titolo) + '</b><br><span class="note">' + esc(m ? m.nome : '') + '</span></span><span class="note">Pubblica →</span></button>'; }).join('') + '</div><span class="note">Gli altri la vedono in sola lettura, con il tuo nome. Non vedono i tuoi progressi né il tuo codice. Puoi toglierla quando vuoi.</span><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
+    r.querySelector('[data-close]').onclick = chiudiSheet;
+    r.querySelectorAll('[data-pc]').forEach(function (b) { b.onclick = function () { condividi(S.caricamenti.find(function (c) { return c.id === b.dataset.pc; }), g); }; });
+  });
+}
+function condividi(c, g) {
+  chiediNome(function (io) {
+    var m = materia(c.materiaId);
+    api('/api/gruppi', { azione: 'condividi', uid: S.uid, cid: c.id, gid: g ? g.gid : null, mioNome: io, titolo: c.titolo, materia: m ? m.nome : '' }).then(function (x) {
+      if (!S.condivisioni) S.condivisioni = []; S.condivisioni.push({ sid: x.sid, cid: c.id, gid: g ? g.gid : null, gnome: g ? g.nome : '', data: new Date().toISOString() }); salva();
+      chiudiSheet();
+      if (g) { GRUPPI[g.gid] = x.gruppo; toast('Pubblicata in ' + g.nome); mostra('gruppi', g.gid); }
+      else setTimeout(function () { mostraLink(x.sid, c); }, 250);
+    }).catch(function () { toast('Non riesco a pubblicarla.'); });
+  });
+}
+function mostraLink(sid, c) {
+  var link = location.origin + '/?s=' + sid, testo = 'Ti condivido «' + c.titolo + '» su UniLampo: ' + link;
+  sheet('<span class="lab">Link di sola lettura</span><h2 style="font-size:22px">' + esc(c.titolo) + '</h2><div class="orig" style="user-select:all;max-height:none">' + esc(link) + '</div><span style="font-size:14px">Chi apre il link può aggiungerla alle sue dispense. Non vede i tuoi progressi né il tuo codice. Puoi disattivarlo quando vuoi dalla dispensa.</span>' +
+    (navigator.share ? '<button class="btn" id="lk-sh">Invia il link…</button>' : '') + '<button class="btn' + (navigator.share ? ' ghost" style="color:var(--blu)' : '') + '" id="lk-cp">Copia il link</button><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) {
+    r.querySelector('[data-close]').onclick = chiudiSheet; $('lk-cp').onclick = function () { copia(testo, 'Link copiato'); };
+    var sh = $('lk-sh'); if (sh) sh.onclick = function () { navigator.share({ title: c.titolo, text: testo }).catch(function () {}); };
+  });
+}
+function schedaCondividi(c) {
+  var mie = (S.condivisioni || []).filter(function (k) { return k.cid === c.id; }), gr = S.gruppi || [];
+  sheet('<span class="lab">Condividi</span><h2 style="font-size:22px">' + esc(c.titolo) + '</h2>' +
+    (gr.length ? '<span class="t lab" style="margin-top:4px">Pubblica in un gruppo</span><div style="display:flex;flex-direction:column;gap:8px">' + gr.map(function (g) { var gia = mie.some(function (k) { return k.gid === g.gid; }); return '<button class="li" data-cg="' + g.gid + '"' + (gia ? ' disabled' : '') + '><span><b>' + esc(g.nome) + '</b></span><span class="note">' + (gia ? 'Già pubblicata ✓' : 'Pubblica →') + '</span></button>'; }).join('') + '</div>' : '<button class="btn ghost" data-ng style="color:var(--blu)">+ Crea un gruppo per il tuo corso</button>') +
+    '<button class="btn" data-link>Crea un link di sola lettura</button>' +
+    (mie.length ? '<span class="lab" style="margin-top:6px">Già condivisa</span>' + mie.map(function (k) { return '<div class="li"><span>' + (k.gid ? 'Nel gruppo <b>' + esc(k.gnome) + '</b>' : 'Con un link') + '<br><span class="note">dal ' + giornoIt(k.data) + '</span></span><span style="display:flex;gap:10px">' + (!k.gid ? '<button class="linkap" data-vl="' + k.sid + '">Link</button>' : '') + '<button class="linkap" data-rv="' + k.sid + '" style="color:var(--kob)">Disattiva</button></span></div>'; }).join('') : '') +
+    '<span class="note">Chi la riceve la vede in sola lettura con il tuo nome; non vede i tuoi progressi né il tuo codice.</span><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) {
+    r.querySelector('[data-close]').onclick = chiudiSheet;
+    r.querySelectorAll('[data-cg]').forEach(function (b) { b.onclick = function () { var g = GRUPPI[b.dataset.cg] || gr.find(function (k) { return k.gid === b.dataset.cg; }); condividi(c, g); }; });
+    var ng = r.querySelector('[data-ng]'); if (ng) ng.onclick = function () { chiudiSheet(); setTimeout(creaGruppo, 250); };
+    r.querySelector('[data-link]').onclick = function () { condividi(c, null); };
+    r.querySelectorAll('[data-vl]').forEach(function (b) { b.onclick = function () { mostraLink(b.dataset.vl, c); }; });
+    r.querySelectorAll('[data-rv]').forEach(function (b) { b.onclick = function () { api('/api/gruppi', { azione: 'revoca', uid: S.uid, sid: b.dataset.rv }).then(function () { S.condivisioni = S.condivisioni.filter(function (k) { return k.sid !== b.dataset.rv; }); salva(); chiudiSheet(); toast('Condivisione disattivata'); }).catch(function () { toast('Non riesco a disattivarla.'); }); }; });
+  });
+}
+// Aggiunge una dispensa condivisa tra le proprie (sola lettura): finisce nella materia con lo stesso nome, o in una nuova.
+function prendiCondivisa(sid, info) {
+  var gia = S.caricamenti.find(function (c) { return c.condivisa === sid; });
+  if (gia) { chiudiSheet(); return mostra('dispensa', gia.id); }
+  api('/api/gruppi?s=' + sid).then(function (x) {
+    var nomeMat = (info && info.materia) || x.dispensa.materia || 'Condivise', m = S.materie.find(function (k) { return k.nome.toLowerCase() === nomeMat.toLowerCase(); });
+    if (!m) { m = { id: nid('m'), nome: nomeMat }; S.materie.push(m); }
+    var c = { id: 's' + sid, materiaId: m.id, titolo: (info && info.titolo) || x.dispensa.titolo || 'Dispensa condivisa', data: new Date().toISOString(), stato: 'pronta', condivisa: sid, autore: x.autore, gruppo: info && info.gruppo || '', parti: x.dispensa.parti || { dispensa: true } };
+    S.caricamenti.push(c); S.ultimaMateria = m.id; salva(); dispSalva(c.id, x.dispensa); chiudiSheet();
+    toast('Aggiunta in ' + m.nome); mostra('dispensa', c.id);
+  }).catch(function (e) { toast(e && e.status === 404 ? 'L\'autore ha tolto questa condivisione.' : 'Non riesco ad aprirla.'); });
+}
+function apriLinkCondiviso(sid) {
+  api('/api/gruppi?s=' + sid).then(function (x) {
+    var d = x.dispensa, nc = Object.keys(d.capitoli || {}).length;
+    sheet('<span class="lab">Dispensa condivisa</span><h2 style="font-size:22px">' + esc(d.titolo || 'Dispensa') + '</h2><span style="font-size:14.5px"><b>' + esc(x.autore) + '</b> te l\'ha condivisa' + (d.materia ? ' · ' + esc(d.materia) : '') + (nc ? ' · ' + nc + ' capitoli' : '') + '.</span><button class="btn" id="pc-ok">Aggiungi alle mie dispense</button><button class="btn ghost" data-close style="color:var(--blu2)">No, grazie</button>', function (r) {
+      r.querySelector('[data-close]').onclick = chiudiSheet; $('pc-ok').onclick = function () { prendiCondivisa(sid, { autore: x.autore }); };
+    });
+  }).catch(function () { toast('Questo link non è più attivo.'); });
+}
+
 // ---------- STUDIA ----------
 function vStudia() {
   var v = $('v-studia'), m = materiaCorrente(), h = '';
@@ -284,7 +431,8 @@ function cartaDispensa(c) {
     var nq = domandeDi(c.id).length, p = partiDi(c), et = etichettaParti(p), nRami = d && d.mappa ? d.mappa.rami.length : 0;
     var info = p.dispensa ? nCap + (nCap === 1 ? ' capitolo' : ' capitoli') + (d && d.pagine ? ' da ' + d.pagine + (d.tipoPagine === 'parte' ? ' parti' : ' pagine') : '') + ' · ' + nq + ' domande' : [nq ? nq + ' domande' : '', nRami ? 'mappa: ' + nRami + ' rami' : ''].filter(Boolean).join(' · ');
     var agg = p.dispensa ? '' : '<div class="row" style="gap:14px">' + (!p.test ? '<button class="linkap" data-agg="' + c.id + ':test">+ Aggiungi il test</button>' : '') + (!p.mappa ? '<button class="linkap" data-agg="' + c.id + ':mappa">+ Aggiungi la mappa</button>' : '') + '<button class="linkap" data-agg="' + c.id + ':dispensa" style="color:var(--blu2)">crea la dispensa completa</button></div>';
-    return '<div class="dc"><button class="tt" data-apri="' + c.id + '"><span><h3>' + esc(c.titolo) + '</h3><span class="note">' + (et ? '<span class="tag grey" style="margin-right:6px">' + et + '</span>' : '') + info + '</span></span><span class="go">›</span></button>' +
+    if (c.condivisa) { agg = ''; info = (nCap ? nCap + (nCap === 1 ? ' capitolo' : ' capitoli') + ' · ' : '') + nq + ' domande'; }
+    return '<div class="dc"><button class="tt" data-apri="' + c.id + '"><span><h3>' + esc(c.titolo) + '</h3><span class="note">' + (c.condivisa ? '<span class="tag" style="margin-right:6px">da ' + esc(c.autore || '') + '</span>' : '') + (et ? '<span class="tag grey" style="margin-right:6px">' + et + '</span>' : '') + info + '</span></span><span class="go">›</span></button>' +
       (nq ? '<div class="row"><button class="btn v small" data-test="' + c.id + '">Test</button><button class="btn ghost small" data-orale="' + c.id + '" style="color:var(--blu)">Orale</button></div>' : '') + agg + '</div>';
   }
   var pct = j ? Math.round(j.fatti / Math.max(1, j.totali) * 100) : 0, testo = j ? (j.errore ? j.errore : j.fase) : 'Preparazione interrotta';
@@ -501,7 +649,7 @@ function mostraPagina(c, d, n) {
   var nome = d.tipoPagine === 'parte' ? 'Parte ' + n : 'Pagina ' + n;
   sheet('<span class="lab">Dai tuoi appunti · ' + esc(c.file || 'testo incollato') + '</span><h2 style="font-size:22px">' + nome + '</h2><div id="pg-t" class="orig"><span class="spin"></span></div><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) {
     r.querySelector('[data-close]').onclick = chiudiSheet;
-    api('/api/caricamento?uid=' + S.uid + '&cid=' + c.id + '&pagina=' + n).then(function (x) { var e = $('pg-t'); if (e) e.textContent = x.testo || '(pagina vuota)'; }).catch(function () { var e = $('pg-t'); if (e) e.textContent = 'Non riesco a caricare la pagina.'; });
+    api(c.condivisa ? '/api/gruppi?s=' + c.condivisa + '&pagina=' + n : '/api/caricamento?uid=' + S.uid + '&cid=' + c.id + '&pagina=' + n).then(function (x) { var e = $('pg-t'); if (e) e.textContent = x.testo || '(pagina vuota)'; }).catch(function () { var e = $('pg-t'); if (e) e.textContent = 'Non riesco a caricare la pagina.'; });
   });
 }
 
@@ -512,7 +660,8 @@ function vDispensa(cid) {
   if (!d) { v.innerHTML = '<div class="card"><span class="spin"></span></div>'; dispCarica(cid).then(function (x) { if (x && cur.view === 'dispensa') vDispensa(cid); else if (!x) v.innerHTML = '<div class="empty">Dispensa non trovata.</div>'; }); return; }
   FONTI_VIS = { fonti: d.fonti || [], tipo: d.tipoPagine || 'pagina' };
   var j = JOBS[cid], m = materia(c.materiaId), h = '<button class="back" data-b>← ' + esc(m ? m.nome : 'Studia') + '</button><h1 class="h1" style="font-size:28px">' + esc(c.titolo || d.titolo) + '</h1>';
-  h += copertura(c, d, j);
+  if (c.condivisa) h += '<div class="cop lav"><b>Condivisa da ' + esc(c.autore || 'un compagno') + (c.gruppo ? ' · gruppo ' + esc(c.gruppo) : '') + '</b><span>' + (c.tolta ? 'L\'autore ha tolto la condivisione: vedi l\'ultima versione salvata.' : 'Sola lettura: test, orale, ricerca e ripasso funzionano come per le tue.') + '</span></div>';
+  h += c.condivisa ? '' : copertura(c, d, j);
   if (j && !(j.errore && d.pagine)) h += '<div class="dc lav"><div class="attesa">' + (j.errore ? '<b style="color:var(--kob)">Si è fermato: ' + esc(j.errore) + '</b>' : '<span class="spin"></span>' + esc(j.fase)) + '</div>' + fasi(j) + '<div class="bar"><i style="width:' + Math.round(j.fatti / Math.max(1, j.totali) * 100) + '%"></i></div></div>';
   if (d.mappa && d.mappa.rami && d.mappa.rami.length) h += mappaHTML(d, c, partiDi(c).dispensa);
   var pp = partiDi(c);
@@ -542,8 +691,9 @@ function vDispensa(cid) {
   });
   var nq = domandeDi(cid).length;
   if (nq) h += '<button class="btn v" data-ver>Fai il test · ' + nq + ' domande</button>';
+  if (!c.condivisa && c.stato === 'pronta') h += '<button class="btn" data-condividi>Condividi con i compagni</button>';
   if (pp.dispensa && Object.keys(d.capitoli).length) h += '<button class="btn ghost" data-stampa style="color:var(--blu)">⤓ Scarica in PDF o stampa</button>';
-  h += '<button class="linkap" data-del style="color:var(--kob);align-self:center">Elimina' + (pp.dispensa ? ' questa dispensa' : '') + '</button>';
+  h += '<button class="linkap" data-del style="color:var(--kob);align-self:center">' + (c.condivisa ? 'Togli dalle mie dispense' : 'Elimina' + (pp.dispensa ? ' questa dispensa' : '')) + '</button>';
   v.innerHTML = h;
   lineeMappa(v.querySelector('.map'));
   v.querySelectorAll('[data-vai]').forEach(function (b) { b.onclick = function () { var x = $('cap' + b.dataset.vai); if (x) x.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
@@ -556,9 +706,10 @@ function vDispensa(cid) {
   v.querySelectorAll('[data-riprendi]').forEach(function (b) { b.onclick = function () { if (!AI.accesa) return toast(PAUSA); delete JOBS[cid]; prepara(c); vDispensa(cid); }; });
   v.querySelectorAll('[data-agg]').forEach(function (b) { b.onclick = function () { aggiungiParte(b.dataset.agg); }; });
   var ver = v.querySelector('[data-ver]'); if (ver) ver.onclick = function () { avviaTest({ tipo: 'verifica', cid: cid }); };
+  var cnd = v.querySelector('[data-condividi]'); if (cnd) cnd.onclick = function () { schedaCondividi(c); };
   v.querySelector('[data-del]').onclick = function () {
-    if (!confirm('Eliminare questa dispensa?')) return;
-    api('/api/caricamento?uid=' + S.uid + '&cid=' + cid, null, 'DELETE').catch(function () {}); try { localStorage.removeItem('ul-d-' + cid); } catch (e) {}
+    if (!confirm(c.condivisa ? 'Togliere questa dispensa condivisa dalle tue? Puoi riaggiungerla dal gruppo.' : 'Eliminare questa dispensa?')) return;
+    if (!c.condivisa) api('/api/caricamento?uid=' + S.uid + '&cid=' + cid, null, 'DELETE').catch(function () {}); try { localStorage.removeItem('ul-d-' + cid); } catch (e) {}
     S.caricamenti = S.caricamenti.filter(function (x) { return x.id !== cid; }); salva(); mostra('studia');
   };
 }
@@ -638,6 +789,7 @@ function mostraFonte(d, n) {
     '<a class="btn" href="' + esc(f.url) + '" target="_blank" rel="noopener" style="text-decoration:none">Apri la fonte</a><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) { r.querySelector('[data-close]').onclick = chiudiSheet; });
 }
 function approfondisci(c, d, key, cap, testo) {
+  if (c.condivisa) return toast('È una dispensa condivisa: gli approfondimenti li aggiunge chi l\'ha pubblicata.');
   var gia = d.approfondimenti[key];
   if (gia) return sheet('<div class="flex"><span class="lab">Approfondimento</span><span class="tag dark">Nella dispensa ✓</span></div>' + corpoApp(d, gia) + '<span class="note">Salvato nella dispensa il ' + giornoIt(gia.data) + '.</span><button class="btn v" data-close>Chiudi</button>', function (r) { legaSheet(r, d); });
   sheet('<span class="lab">Approfondisci</span><div style="font-family:\'Bricolage Grotesque\';font-size:17px;line-height:1.3">“' + esc(testo.slice(0, 110)) + (testo.length > 110 ? '…' : '') + '”</div>' +
@@ -989,6 +1141,8 @@ leggiStato().then(function () {
   rerender();
   if (S.notifiche && 'Notification' in window && Notification.permission === 'granted' && AI.vapid) iscrivi().catch(function () {});
 });
+var daGruppo = (location.search.match(/[?&]g=([A-Za-z0-9]{6,12})/) || [])[1], daLink = (location.search.match(/[?&]s=([a-z2-9]{10,20})/) || [])[1], aGruppo = (location.search.match(/[?&]gr=([a-z2-9]{8,16})/) || [])[1];
+if (daGruppo || daLink || aGruppo) { history.replaceState(null, '', '/'); setTimeout(function () { if (aGruppo) mostra('gruppi', aGruppo); else if (daGruppo) { mostra('gruppi'); entraGruppo(daGruppo.toUpperCase()); } else apriLinkCondiviso(daLink); }, 400); }
 var daNotifica = (location.search.match(/[?&]d=([a-z0-9-]{4,60})/) || [])[1];
 if (daNotifica) { history.replaceState(null, '', '/'); setTimeout(function () { if (S.caricamenti.some(function (c) { return c.id === daNotifica; })) mostra('dispensa', daNotifica); }, 300); }
 // Al rientro nell'app ricarica in silenzio le dispense dal server (servono a test, orale e ripasso).
