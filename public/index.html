@@ -212,6 +212,81 @@ body.kb nav.tabs{display:none}
 .attesa{display:flex;gap:9px;align-items:center;color:var(--muto);font-size:14px}
 nav.tabs{grid-template-columns:repeat(3,1fr)}
 nav.tabs button{font-size:12px}
+
+.oggi{background:#fff;border-radius:22px;padding:16px;display:flex;flex-direction:column;gap:10px;border:2px solid var(--navy)}
+.pillx{background:var(--navy);color:#fff;border:0;border-radius:99px;padding:6px 12px;font-weight:700;font-size:12.5px}
+.todo{display:flex;align-items:center;gap:12px;background:#FFE15C;color:var(--navy);border:0;border-radius:16px;padding:12px 13px;text-align:left;width:100%}
+.todo:nth-of-type(n+2){background:var(--bg)}
+.todo i{font-style:normal;font-size:24px;flex:none}.todo span{flex:1;display:flex;flex-direction:column;gap:2px}.todo b{font-size:16px;font-family:'Bricolage Grotesque';font-weight:800}.todo small{font-size:12.5px;color:var(--ink2)}
+.todo em{font-style:normal;width:32px;height:32px;border-radius:50%;background:var(--navy);color:#FFE15C;display:flex;align-items:center;justify-content:center;flex:none;font-weight:800}
+.pronta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:2px}.pronta>div{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muto)}.pronta b{font-size:20px;color:var(--navy);font-family:'Bricolage Grotesque'}
+.studiato{align-self:flex-start;border:2px solid var(--navy);background:#fff;color:var(--navy);font-weight:800;font-size:14px;border-radius:99px;padding:9px 16px}
+.studiato.si{background:#D8F7A0;border-color:#2c6e00;color:#2c5a00}
+.timer{font-family:'Bricolage Grotesque';font-weight:800;font-size:18px;background:var(--navy);color:#fff;border-radius:99px;padding:6px 14px}.timer.poco{background:var(--kob)}
+@media print{
+  @page{margin:14mm}
+  body,html{background:#fff!important}
+  nav.tabs,.top,.toast,.sheetw,.back,#v-dispensa .linkap,#v-dispensa .ap,#v-dispensa .vai,#v-dispensa .studiato,#v-dispensa [data-stampa],#v-dispensa .cop .btn,#v-dispensa .dc.lav{display:none!important}
+  .app{margin:0!important;padding:0!important;max-width:none!important}
+  .view{display:none!important}#v-dispensa{display:flex!important;flex-direction:column;gap:10px;padding:0!important;max-width:none!important}
+  #v-dispensa.on{display:flex!important}
+  #v-dispensa>.paper.mappa{position:static!important;max-height:none!important;overflow:visible!important}
+  .paper{box-shadow:none!important;border:1px solid #dde7f2;break-inside:auto}
+  .paper h3,.box,.node{break-inside:avoid}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .map svg.linee{display:none}
+}
+
+/* ---------- computer: barra laterale e contenuto largo ---------- */
+@media (min-width:1000px){
+  body{background:var(--bg)}
+  .app{max-width:none;margin:0 0 0 248px;padding:0 44px}
+  .top{position:fixed;z-index:52;left:0;top:0;width:248px;padding:26px 24px 0;justify-content:flex-start;gap:10px}
+  .top .logo{color:#fff;font-size:27px}
+  .top .badge{background:var(--cel);color:var(--navy)}
+  nav.tabs{left:0;top:0;bottom:0;transform:none;width:248px;border-radius:0;border:0;background:var(--navy);display:flex;flex-direction:column;gap:8px;padding:96px 16px 24px;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+  nav.tabs button{flex-direction:row;justify-content:flex-start;gap:14px;min-height:56px;padding:0 18px;border-radius:16px;font-size:16.5px;font-weight:700;color:#C9DBF5}
+  nav.tabs button:hover{background:rgba(255,255,255,.08);color:#fff}
+  nav.tabs button.on{background:var(--blu);color:#fff;box-shadow:0 10px 24px -8px rgba(30,79,216,.8)}
+  nav.tabs svg{width:23px;height:23px}
+  nav.tabs:after{content:'Studia meglio, non di più.';margin-top:auto;color:#7F9CC8;font-size:12.5px;padding:0 18px}
+  .view{padding:34px 0 60px;max-width:1240px;width:100%;margin:0 auto}
+  .h1{font-size:44px}
+  .sheet{top:50%;bottom:auto;transform:translate(-50%,-50%);border-radius:26px;max-height:86vh;width:min(600px,92vw);padding:22px 26px 26px;margin-left:124px}
+  .toast{bottom:28px;margin-left:124px}
+  .card,.dc,.paper{border-radius:24px}
+
+  /* Studia: materia e caricamento affiancati, dispense in griglia */
+  #v-studia.on{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:18px 22px;align-content:start}
+  #v-studia>*{grid-column:1/-1}
+  #v-studia>.mat{grid-row:1}
+  #v-studia>.hero{grid-column:1/8;grid-row:2;padding:28px 30px}
+  #v-studia>.hero h2{font-size:46px}
+  #v-studia .stat b{font-size:38px}
+  #v-studia .stat div{padding:16px 14px}
+  #v-studia>.oggi{grid-column:8/-1;grid-row:2/span 3;align-self:start;padding:20px}
+  #v-studia>.up{grid-column:1/8;grid-row:3;padding:22px 24px}
+  #v-studia>.up b{font-size:24px}
+  #v-studia>.linkap{grid-column:1/8;grid-row:4;justify-self:center}
+  #v-studia>.dc{grid-column:span 6}
+  #v-studia>.dc:hover{border-color:var(--cel3)}
+  #v-studia>.foot{flex-direction:row;justify-content:center;gap:16px}
+
+  /* Dispensa: capitoli a sinistra, mappa sempre visibile a destra */
+  #v-dispensa.on{display:grid;grid-template-columns:minmax(0,1fr) 460px;column-gap:28px;row-gap:0;align-content:start;align-items:start}
+  #v-dispensa>*{grid-column:1;margin-bottom:16px}
+  #v-dispensa>.paper.mappa{grid-column:2;grid-row:1/span 80;position:sticky;top:24px;max-height:calc(100vh - 48px);overflow:auto;margin:0}
+  #v-dispensa>.paper{padding:26px 30px;font-size:16.5px;line-height:1.6}
+  #v-dispensa>.paper h3{font-size:23px}
+  #v-dispensa .linkap,#v-dispensa .btn.v{align-self:flex-start}
+
+  /* Test e orale: colonna centrale comoda */
+  #v-test.on,#v-orale.on{max-width:860px}
+}
+@media (min-width:1000px) and (max-width:1250px){
+  #v-dispensa.on{grid-template-columns:minmax(0,1fr) 380px}
+  #v-studia>.dc{grid-column:1/-1}
+}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>

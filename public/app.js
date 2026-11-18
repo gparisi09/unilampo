@@ -100,6 +100,54 @@ function schedaMateria(m) {
   });
 }
 
+// ---------- PIANO: data dell'esame, cosa fare oggi, quanto sei pronta ----------
+function giorniA(data) { if (!data) return null; var a = new Date(giorno() + 'T00:00:00'), b = new Date(data + 'T00:00:00'); return Math.round((b - a) / 86400000); }
+function capitoliMateria(mid) { // [{cid, i, titolo}] di tutte le dispense complete
+  var o = []; carDi(mid).forEach(function (c) { var d = dispLocale(c.id); if (!d || !partiDi(c).dispensa) return; d.argomenti.forEach(function (a, i) { if (d.capitoli[i]) o.push({ cid: c.id, i: i, titolo: d.capitoli[i].titolo }); }); });
+  return o;
+}
+function letto(cid, i) { return !!(S.letti && S.letti[cid + ':' + i]); }
+function piano(m) {
+  var caps = capitoliMateria(m.id), daLeggere = caps.filter(function (x) { return !letto(x.cid, x.i); }), qs = domandeMateria(m.id);
+  var sapute = qs.filter(function (x) { var r = S.risposte[x.qid]; return r && r.box >= 2; }).length, gg = giorniA(m.esame);
+  var perOggi = daLeggere.length ? (gg === null ? Math.min(2, daLeggere.length) : Math.min(daLeggere.length, Math.max(1, Math.ceil(daLeggere.length / Math.max(1, gg - 3))))) : 0;
+  return { caps: caps, daLeggere: daLeggere, perOggi: perOggi, qs: qs, sapute: sapute, gg: gg, due: daRipassare(m.id) };
+}
+function boxPiano(m) {
+  var p = piano(m), h = '<div class="oggi"><div class="flex"><span class="lab">Oggi</span>' +
+    (p.gg === null ? '<button class="linkap" data-esame>📅 Quando hai l\'esame?</button>' : '<button class="pillx" data-esame>' + (p.gg > 1 ? 'Esame tra ' + p.gg + ' giorni' : p.gg === 1 ? 'Esame domani' : p.gg === 0 ? 'Esame oggi' : 'Esame passato') + ' · ' + giornoIt(m.esame) + '</button>') + '</div>';
+  var cose = [];
+  if (p.perOggi) cose.push('<button class="todo" data-leggi="' + p.daLeggere[0].cid + ':' + p.daLeggere[0].i + '"><i>📖</i><span><b>Studia ' + (p.perOggi === 1 ? '1 capitolo' : p.perOggi + ' capitoli') + '</b><small>Inizia da: ' + esc(p.daLeggere[0].titolo) + '</small></span><em>→</em></button>');
+  if (p.due.length) cose.push('<button class="todo" data-rip2><i>🔁</i><span><b>Ripassa ' + p.due.length + (p.due.length === 1 ? ' domanda sbagliata' : ' domande sbagliate') + '</b><small>Tornano finché non le sai</small></span><em>→</em></button>');
+  if (p.qs.length >= 10 && (!p.daLeggere.length || (p.gg !== null && p.gg <= 7))) cose.push('<button class="todo" data-sim2><i>⏱️</i><span><b>Simulazione d\'esame</b><small>' + Math.min(30, p.qs.length) + ' domande a tempo, voto in trentesimi</small></span><em>→</em></button>');
+  else if (p.qs.length) cose.push('<button class="todo" data-test2><i>✅</i><span><b>Test veloce</b><small>15 domande, prima quelle che sai meno</small></span><em>→</em></button>');
+  if (!cose.length) cose.push('<span class="note">Carica il primo PDF: qui comparirà cosa fare ogni giorno.</span>');
+  h += cose.join('');
+  if (p.caps.length || p.qs.length) h += '<div class="pronta">' +
+    (p.caps.length ? '<div><span>Capitoli studiati</span><b>' + (p.caps.length - p.daLeggere.length) + ' / ' + p.caps.length + '</b><div class="bar"><i style="width:' + Math.round((p.caps.length - p.daLeggere.length) / p.caps.length * 100) + '%"></i></div></div>' : '') +
+    (p.qs.length ? '<div><span>Domande che sai</span><b>' + p.sapute + ' / ' + p.qs.length + '</b><div class="bar"><i style="width:' + Math.round(p.sapute / p.qs.length * 100) + '%"></i></div></div>' : '') + '</div>';
+  return h + '</div>';
+}
+function legaPiano(v, m) {
+  var e = v.querySelector('[data-esame]'); if (e) e.onclick = function () { schedaEsame(m); };
+  var l = v.querySelector('[data-leggi]'); if (l) l.onclick = function () { var q = l.dataset.leggi.split(':'); mostra('dispensa', q[0]); setTimeout(function () { var x = $('cap' + q[1]); if (x) x.scrollIntoView({ block: 'start' }); }, 80); };
+  var r = v.querySelector('[data-rip2]'); if (r) r.onclick = function () { avviaTest({ tipo: 'ripasso', mid: m.id }); };
+  var s = v.querySelector('[data-sim2]'); if (s) s.onclick = function () { avviaTest({ tipo: 'simulazione', mid: m.id }); };
+  var t = v.querySelector('[data-test2]'); if (t) t.onclick = function () { avviaTest({ tipo: 'materia', mid: m.id }); };
+}
+function schedaEsame(m) {
+  sheet('<h2 style="font-size:22px">Quando hai l\'esame di ' + esc(m.nome) + '?</h2><span style="font-size:14px">Con la data, ogni giorno ti dico quanti capitoli studiare per arrivare pronta, lasciando gli ultimi giorni per ripasso e simulazioni.</span><div class="field"><label for="es-d">Data dell\'esame</label><input id="es-d" type="date" min="' + giorno() + '" value="' + esc(m.esame || '') + '"></div><button class="btn" id="es-ok">Salva</button>' + (m.esame ? '<button class="btn ghost" id="es-via" style="color:var(--kob)">Togli la data</button>' : '') + '<button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
+    r.querySelector('[data-close]').onclick = chiudiSheet;
+    r.querySelector('#es-ok').onclick = function () { var x = $('es-d').value; if (!/^\d{4}-\d{2}-\d{2}$/.test(x)) return toast('Scegli una data.'); m.esame = x; salva(); chiudiSheet(); rerender(); };
+    var via = r.querySelector('#es-via'); if (via) via.onclick = function () { delete m.esame; salva(); chiudiSheet(); rerender(); };
+  });
+}
+function segnaLetto(cid, i) {
+  if (!S.letti) S.letti = {};
+  if (S.letti[cid + ':' + i]) delete S.letti[cid + ':' + i]; else S.letti[cid + ':' + i] = giorno();
+  salva();
+}
+
 // ---------- STUDIA ----------
 function vStudia() {
   var v = $('v-studia'), m = materiaCorrente(), h = '';
@@ -114,7 +162,7 @@ function vStudia() {
   h += barraMaterie(true);
   h += '<div class="hero"><div class="flex"><span class="lab">Materia</span></div><h2>' + esc(m.nome) + '<button class="ed" type="button" data-ed aria-label="Modifica nome">' + MATITA + '</button></h2>' +
     '<div class="stat"><div><b>' + (st.pct === null ? '–' : st.pct + '%') + '</b><span>risposte giuste</span></div><div><b>' + (function (k) { return k + '</b><span>' + (k === 1 ? 'dispensa' : 'dispense'); })(car.filter(function (c) { return c.stato === 'pronta'; }).length) + '</span></div><div><b>' + nq + '</b><span>' + (nq === 1 ? 'domanda' : 'domande') + '</span></div></div></div>';
-  if (due.length) h += '<button class="giallo" data-rip><span>Ripassa le ' + due.length + (due.length === 1 ? ' domanda sbagliata' : ' domande sbagliate') + '</span><span class="fr">→</span></button>';
+  h += boxPiano(m);
   h += '<label class="up"><input type="file" id="up-file" accept=".pdf,.txt,.md,application/pdf,text/plain"><span class="plus">+</span><span><b>Carica appunti</b><span>PDF o testo · dispensa, test o mappa: scegli tu</span></span></label>';
   h += '<button class="linkap" data-incolla style="align-self:center">oppure incolla il testo</button>';
   h += boxNotifiche();
@@ -125,7 +173,7 @@ function vStudia() {
   v.innerHTML = h;
   legaMaterie(v);
   v.querySelector('[data-ed]').onclick = function () { schedaMateria(m); };
-  var r = v.querySelector('[data-rip]'); if (r) r.onclick = function () { avviaTest({ tipo: 'ripasso', mid: m.id }); };
+  legaPiano(v, m);
   $('up-file').onchange = function (e) { var f = e.target.files[0]; if (f) caricaFile(m, f); e.target.value = ''; };
   v.querySelector('[data-incolla]').onclick = function () { incolla(m); };
   var nb = v.querySelector('[data-notif]'); if (nb) nb.onclick = attivaNotifiche;
@@ -408,11 +456,13 @@ function vDispensa(cid) {
       var ic = x.tipo === 'ok' ? '<i class="ic i-ok">✓</i>' : x.tipo === 'incompleto' ? '<i class="ic i-w">!</i>' : '<i class="ic i-no">≠</i>';
       return '<div>' + ic + '<span>' + (x.tipo === 'incompleto' ? '<b>Incompleto:</b> ' : x.tipo === 'diverso' ? '<b>Diverso:</b> ' : '') + marca(x.testo) + '</span></div>';
     }).join('') + '</div>';
+    h += '<button type="button" class="studiato' + (letto(cid, i) ? ' si' : '') + '" data-letto="' + i + '">' + (letto(cid, i) ? '✓ Studiato' : 'Segna come studiato') + '</button>';
     var mie = (d.ricerca[i] && d.ricerca[i].nums) || [];
     h += '<div class="srcs"><span class="t">Fonti</span>' + (mie.length ? mie.map(function (n) { var f = (d.fonti || []).find(function (x) { return x.n === n; }); return f ? '<span>[' + n + '] <a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.titolo) + '</a>' + (f.sito ? ' · ' + esc(f.sito) : '') + '</span>' : ''; }).join('') : '<span>Nessuna fonte affidabile trovata: il capitolo si basa sui tuoi appunti.</span>') + '</div></div>';
   });
   var nq = domandeDi(cid).length;
   if (nq) h += '<button class="btn v" data-ver>Fai il test · ' + nq + ' domande</button>';
+  if (pp.dispensa && Object.keys(d.capitoli).length) h += '<button class="btn ghost" data-stampa style="color:var(--blu)">⤓ Scarica in PDF o stampa</button>';
   h += '<button class="linkap" data-del style="color:var(--kob);align-self:center">Elimina' + (pp.dispensa ? ' questa dispensa' : '') + '</button>';
   v.innerHTML = h;
   lineeMappa(v.querySelector('.map'));
@@ -420,6 +470,8 @@ function vDispensa(cid) {
   v.querySelector('[data-b]').onclick = function () { mostra('studia'); };
   v.querySelectorAll('[data-ap]').forEach(function (b) { b.onclick = function () { approfondisci(c, d, b.dataset.ap, +b.dataset.cap, b.dataset.txt); }; });
   v.querySelectorAll('[data-fonte]').forEach(function (b) { b.onclick = function () { mostraFonte(d, +b.dataset.fonte); }; });
+  v.querySelectorAll('[data-letto]').forEach(function (b) { b.onclick = function () { segnaLetto(cid, +b.dataset.letto); var on = letto(cid, +b.dataset.letto); b.classList.toggle('si', on); b.textContent = on ? '✓ Studiato' : 'Segna come studiato'; if (on) toast('Segnato: ottimo lavoro'); }; });
+  var stp = v.querySelector('[data-stampa]'); if (stp) stp.onclick = function () { document.title = (c.titolo || 'Dispensa') + ' · UniLampo'; window.print(); setTimeout(function () { document.title = 'UniLampo'; }, 1500); };
   v.querySelectorAll('[data-pag]').forEach(function (b) { b.onclick = function () { mostraPagina(c, d, +b.dataset.pag); }; });
   v.querySelectorAll('[data-riprendi]').forEach(function (b) { b.onclick = function () { if (!AI.accesa) return toast(PAUSA); delete JOBS[cid]; prepara(c); vDispensa(cid); }; });
   v.querySelectorAll('[data-agg]').forEach(function (b) { b.onclick = function () { aggiungiParte(b.dataset.agg); }; });
@@ -546,14 +598,18 @@ function avviaTest(o) {
   var pool;
   if (o.tipo === 'verifica') pool = domandeDi(o.cid);
   else if (o.tipo === 'ripasso') pool = daRipassare(o.mid);
+  else if (o.tipo === 'simulazione') pool = mescola(domandeMateria(o.mid)).slice(0, 30);
   else pool = mescola(domandeMateria(o.mid)).sort(function (a, b) { var ra = S.risposte[a.qid], rb = S.risposte[b.qid]; return (ra ? ra.box : -1) - (rb ? rb.box : -1); }).slice(0, 15);
+  var visti = {}; pool = pool.filter(function (x) { var k = String(x.q.testo).toLowerCase().replace(/\s+/g, ' ').trim(); if (visti[k]) return false; visti[k] = 1; return true; });
   if (!pool.length) { toast('Nessuna domanda da fare qui.'); return; }
-  T = { o: o, lista: mescola(pool).map(function (x) { var ord = mescola([0, 1, 2, 3]); return { qid: x.qid, cid: x.cid, q: x.q, ord: ord }; }), i: 0, ok: 0, risposto: false, inizio: Date.now() };
+  T = { o: o, lista: mescola(pool).map(function (x) { var ord = mescola([0, 1, 2, 3]); return { qid: x.qid, cid: x.cid, q: x.q, ord: ord }; }), i: 0, ok: 0, risposto: false, inizio: Date.now(), sim: o.tipo === 'simulazione', risposte: [] };
+  if (T.sim) T.fine = Date.now() + Math.round(T.lista.length * 1.5) * 60000;
   mostra('test', { inCorso: true });
 }
 function disegnaDomanda() {
   var v = $('v-test'), x = T.lista[T.i];
   if (!x) return fineTest();
+  if (T.sim) return domandaSim();
   var q = x.q, c = S.caricamenti.find(function (k) { return k.id === x.cid; }) || {};
   var h = '<div class="flex"><button class="back" data-esci>← Esci</button><span class="tag">' + esc((materia(c.materiaId) || {}).nome || '') + '</span></div><div class="card">' +
     '<div class="qtop"><span>Domanda ' + (T.i + 1) + ' di ' + T.lista.length + '</span><span class="pill">' + T.ok + ' giuste</span></div><div class="bar"><i style="width:' + Math.round(T.i / T.lista.length * 100) + '%"></i></div>' +
@@ -574,7 +630,32 @@ function disegnaDomanda() {
     };
   });
 }
+// Simulazione: a tempo, senza spiegazioni durante; alla fine voto in trentesimi e correzione.
+function domandaSim() {
+  var v = $('v-test'), x = T.lista[T.i], q = x.q;
+  v.innerHTML = '<div class="flex"><button class="back" data-esci>← Esci</button><span class="timer" id="t-tempo"></span></div><div class="card"><div class="qtop"><span>Simulazione · domanda ' + (T.i + 1) + ' di ' + T.lista.length + '</span><span class="pill">senza aiuti</span></div><div class="bar"><i style="width:' + Math.round(T.i / T.lista.length * 100) + '%"></i></div>' +
+    '<p class="qtxt">' + esc(q.testo) + '</p><div class="opts">' + x.ord.map(function (k) { return '<button class="opt" data-k="' + k + '">' + esc(q.opzioni[k]) + '</button>'; }).join('') + '</div><button class="linkap" data-salta style="align-self:center">Salta (vale come non data)</button></div>';
+  var tick = function () { var e = $('t-tempo'); if (!e || !T || !T.sim) return clearInterval(T && T.tk); var r = Math.max(0, T.fine - Date.now()); e.textContent = '⏱ ' + Math.floor(r / 60000) + ':' + String(Math.floor(r / 1000) % 60).padStart(2, '0'); e.classList.toggle('poco', r < 120000); if (!r) { clearInterval(T.tk); T.i = T.lista.length; fineTest(); } };
+  clearInterval(T.tk); T.tk = setInterval(tick, 1000); tick();
+  v.querySelector('[data-esci]').onclick = function () { if (!confirm('Uscire dalla simulazione? Il voto non verrà calcolato.')) return; clearInterval(T.tk); T = null; mostra('test'); };
+  var avanti = function (k) { var giusta = k === q.giusta; if (giusta) T.ok++; T.risposte.push({ x: x, k: k }); if (k !== null) registraRisposta(x.qid, giusta); T.i++; window.scrollTo(0, 0); disegnaDomanda(); };
+  v.querySelectorAll('.opt').forEach(function (b) { b.onclick = function () { avanti(+b.dataset.k); }; });
+  v.querySelector('[data-salta]').onclick = function () { avanti(null); };
+}
+function fineSim() {
+  clearInterval(T.tk);
+  var v = $('v-test'), n = T.lista.length, voto = Math.round(T.ok / n * 30), min = Math.max(1, Math.round((Date.now() - T.inizio) / 60000)), sbagliate = T.risposte.filter(function (r) { return r.k !== r.x.q.giusta; });
+  var nonDate = n - T.risposte.length;
+  S.simulazioni = (S.simulazioni || []).concat([{ mid: T.o.mid, data: giorno(), voto: voto, ok: T.ok, n: n }]).slice(-30); salva();
+  var h = '<div class="card" style="align-items:flex-start"><span class="lab">Simulazione d\'esame · risultato</span><div class="score">' + voto + '<span style="font-size:22px">/30</span></div><span>' + T.ok + ' giuste su ' + n + (nonDate ? ' (' + nonDate + ' non date)' : '') + ' in ' + min + (min === 1 ? ' minuto. ' : ' minuti. ') + (voto >= 18 ? 'Sufficiente.' : 'Sotto il 18: ripassa le sbagliate e riprova.') + '</span><span class="note">Calcolo: 1 punto per risposta giusta, nessuna penalità, riportato in trentesimi. Il tuo esame può avere regole diverse.</span>' +
+    '<div class="row" style="width:100%"><button class="btn v" id="t-ancora">Nuova simulazione</button><button class="btn ghost" id="t-rip" style="color:var(--blu)">Torna ai test</button></div></div>';
+  if (sbagliate.length) h += '<div class="sez">Correzione · ' + sbagliate.length + (sbagliate.length === 1 ? ' errore' : ' errori') + '</div>' + sbagliate.map(function (r) { var q = r.x.q; return '<div class="card" style="gap:6px"><b style="font-size:15px">' + esc(q.testo) + '</b>' + (r.k === null ? '<span class="note">Non data</span>' : '<span style="color:var(--kob);text-decoration:line-through">' + esc(q.opzioni[r.k]) + '</span>') + '<span style="color:var(--okt);font-weight:700">✓ ' + esc(q.opzioni[q.giusta]) + '</span><span class="note">' + esc(q.spiegazione) + '</span></div>'; }).join('');
+  v.innerHTML = h;
+  var o = T.o; $('t-ancora').onclick = function () { avviaTest(o); };
+  $('t-rip').onclick = function () { T = null; mostra('test'); };
+}
 function fineTest() {
+  if (T.sim) return fineSim();
   var v = $('v-test'), n = T.lista.length, pct = Math.round(T.ok / n * 100);
   v.innerHTML = '<div class="card" style="align-items:flex-start"><span class="lab">Risultato</span><div class="score">' + T.ok + '<span style="font-size:22px">/' + n + '</span></div><span>' + pct + '% di risposte giuste. ' + (n - T.ok ? (n - T.ok === 1 ? 'La sbagliata è già nel ripasso.' : 'Le ' + (n - T.ok) + ' sbagliate sono già nel ripasso.') : 'Nessun errore: queste domande torneranno tra qualche giorno per fissarle.') + '</span>' +
     '<div class="row" style="width:100%"><button class="btn v" id="t-ancora">Rifai un test</button><button class="btn ghost" id="t-rip" style="color:var(--blu)">Torna ai test</button></div></div>';
@@ -759,7 +840,9 @@ function vTest(arg) {
   var nq = domandeMateria(m.id).length, st = statMateria(m.id), deb = argomentiDeboli().filter(function (x) { var c = S.caricamenti.find(function (k) { return k.id === x.cid; }); return c && c.materiaId === m.id && x.pct < 85; });
   if (!nq) h += '<div class="empty"><b>Ancora nessuna domanda per ' + esc(m.nome) + '</b><span>Le domande nascono con ogni dispensa: circa 8 per argomento, più 3 per ogni approfondimento.</span></div>';
   else {
-    h += '<div class="hero"><span class="lab">' + esc(m.nome) + '</span><h2>' + (st.pct === null ? 'Mettiti alla prova' : st.pct + '% giuste') + '</h2><span style="color:#D6E6F5;font-size:14px">' + nq + ' domande dalle tue dispense e dagli approfondimenti. Dopo ogni risposta trovi la spiegazione.</span><button class="btn" data-go>Inizia il test · ' + Math.min(15, nq) + ' domande</button></div>';
+    var sims = (S.simulazioni || []).filter(function (x) { return x.mid === m.id; });
+    h += '<div class="hero"><span class="lab">' + esc(m.nome) + '</span><h2>' + (st.pct === null ? 'Mettiti alla prova' : st.pct + '% giuste') + '</h2><span style="color:#D6E6F5;font-size:14px">' + nq + ' domande dalle tue dispense e dagli approfondimenti. Dopo ogni risposta trovi la spiegazione.</span><button class="btn" data-go>Test veloce · ' + Math.min(15, nq) + ' domande</button></div>';
+    if (nq >= 10) h += '<button class="giallo" data-sim><span>⏱️ Simulazione d\'esame · ' + Math.min(30, nq) + ' domande in ' + Math.round(Math.min(30, nq) * 1.5) + ' minuti, voto in trentesimi' + (sims.length ? '<br><small style="font-weight:600">Ultimi voti: ' + sims.slice(-4).map(function (x) { return x.voto; }).join(' · ') + '</small>' : '') + '</span><span class="fr">→</span></button>';
     if (deb.length) h += '<div class="sez">Da rinforzare</div><div class="card" style="gap:8px">' + deb.slice(0, 4).map(function (x) { return '<button class="li" data-cap="' + x.cid + ':' + x.cap + '"><span><b>' + esc(titoloCap(x.cid, x.cap)) + '</b><br><span class="note">' + x.ko + ' errori su ' + (x.ok + x.ko) + ' · tocca per rileggere</span></span><span class="tag ' + (x.pct < 60 ? 'red' : 'grey') + '">' + x.pct + '%</span></button>'; }).join('') + '</div>';
     var car = carDi(m.id).filter(function (c) { return domandeDi(c.id).length; });
     if (car.length > 1) h += '<div class="sez">Per dispensa</div><div class="card" style="gap:8px">' + car.map(function (c) { return '<button class="li" data-v="' + c.id + '"><span><b>' + esc(c.titolo) + '</b></span><span class="note">' + domandeDi(c.id).length + ' →</span></button>'; }).join('') + '</div>';
@@ -768,6 +851,7 @@ function vTest(arg) {
   legaMaterie(v);
   var r = v.querySelector('[data-rip]'); if (r) r.onclick = function () { avviaTest({ tipo: 'ripasso' }); };
   var g = v.querySelector('[data-go]'); if (g) g.onclick = function () { avviaTest({ tipo: 'materia', mid: m.id }); };
+  var sm = v.querySelector('[data-sim]'); if (sm) sm.onclick = function () { avviaTest({ tipo: 'simulazione', mid: m.id }); };
   v.querySelectorAll('[data-v]').forEach(function (b) { b.onclick = function () { avviaTest({ tipo: 'verifica', cid: b.dataset.v }); }; });
   v.querySelectorAll('[data-cap]').forEach(function (b) { b.onclick = function () { var p = b.dataset.cap.split(':'); mostra('dispensa', p[0]); setTimeout(function () { var e = $('cap' + p[1]); if (e) e.scrollIntoView({ block: 'start' }); }, 60); }; });
 }
