@@ -129,6 +129,20 @@ function vStudia() {
   v.querySelectorAll('[data-orale]').forEach(function (b) { b.onclick = function () { S.ultimaMateria = m.id; S.oraleCid = b.dataset.orale; salva(); mostra('orale'); }; });
   v.querySelectorAll('[data-riprendi]').forEach(function (b) { b.onclick = function () { var c = S.caricamenti.find(function (x) { return x.id === b.dataset.riprendi; }); if (c) prepara(c); }; });
 }
+// Elenco delle fasi con spunte: si vede sempre a che punto è e, se si ferma, dove.
+function fasi(j) {
+  var k = j.conta || {}, n = k.n || 0, err = !!j.errore, righe = [
+    ['Argomenti', k.argomenti ? 'trovati: ' + n : '', k.argomenti ? 1 : 0, 1],
+    ['Fonti affidabili', n ? (k.fonti || 0) + ' di ' + n : '', k.fonti || 0, n || 1],
+    ['Capitoli', n ? (k.capitoli || 0) + ' di ' + n : '', k.capitoli || 0, n || 1],
+    ['Domande', n ? (k.domande || 0) + ' di ' + n : '', k.domande || 0, n || 1],
+    ['Mappa', '', k.mappa || 0, 1]], primoAperto = -1;
+  righe.forEach(function (r, i) { if (primoAperto < 0 && r[2] < r[3]) primoAperto = i; });
+  return '<div class="steps">' + righe.map(function (r, i) {
+    var fatto = r[2] >= r[3], ora = i === primoAperto, cl = fatto ? 'fatto' : ora ? (err ? 'err' : 'ora') : '';
+    return '<div class="' + cl + '"><i>' + (fatto ? '✓' : ora ? (err ? '!' : '…') : i + 1) + '</i><span><b>' + r[0] + '</b>' + (r[1] ? ' · ' + r[1] : '') + (ora && err ? ' · <b style="color:var(--kob)">si è fermato qui</b>' : '') + '</span></div>';
+  }).join('') + '</div>';
+}
 function cartaDispensa(c) {
   var j = JOBS[c.id], d = dispLocale(c.id), nCap = d ? Object.keys(d.capitoli || {}).length : 0, nArg = d ? d.argomenti.length : 0;
   if (c.stato === 'pronta') {
@@ -137,7 +151,7 @@ function cartaDispensa(c) {
       '<div class="row"><button class="btn v small" data-test="' + c.id + '"' + (nq ? '' : ' disabled') + '>Test</button><button class="btn ghost small" data-orale="' + c.id + '" style="color:var(--blu)">Orale</button></div></div>';
   }
   var pct = j ? Math.round(j.fatti / Math.max(1, j.totali) * 100) : 0, testo = j ? (j.errore ? j.errore : j.fase) : 'Preparazione interrotta';
-  return '<div class="dc lav"><div class="tt"><span><h3>' + esc(c.titolo) + '</h3><span class="note">' + esc(testo) + '</span></span>' + (j && !j.errore ? '<span class="spin"></span>' : '') + '</div>' +
+  return '<div class="dc lav"><div class="tt"><span><h3>' + esc(c.titolo) + '</h3><span class="note">' + esc(j && j.errore ? 'Si è fermato: ' + j.errore : testo) + '</span></span>' + (j && !j.errore ? '<span class="spin"></span>' : '') + '</div>' + (j ? fasi(j) : '') +
     '<div class="bar"><i style="width:' + pct + '%"></i></div>' + (j && !j.errore ? '<span class="note">Puoi anche chiudere l\'app: continuo io. Quando torni la trovi qui.</span>' : '') +
     (nCap ? '<button class="btn small" data-apri="' + c.id + '">Inizia a leggere →</button>' : '') +
     (!j || j.errore ? '<button class="btn v small" data-riprendi="' + c.id + '"' + (AI.accesa ? '' : ' disabled') + '>Riprendi da dove si è fermata</button>' + (AI.accesa ? '' : notaAI()) : '') + '</div>';
@@ -209,11 +223,11 @@ function segui(c) {
     dispCarica(c.id).then(function (d) {
       var L = d && d.lavoro;
       if (d && d.titolo && (c.titolo === c.file || c.titolo === String(c.file || '').replace(/\.[a-z0-9]+$/i, '') || c.titolo === 'Appunti incollati')) { c.titolo = d.titolo; salva(); }
-      if (!L) { SEGUO[c.id] = false; return; }
+      if (!L) { SEGUO[c.id] = (SEGUO[c.id] === true ? 1 : SEGUO[c.id] + 1); if (SEGUO[c.id] > 15) { SEGUO[c.id] = false; return; } setTimeout(giro, 3000); return; } // il server sta ancora partendo
       if (L.fine) { c.stato = 'pronta'; salva(); delete JOBS[c.id]; SEGUO[c.id] = false; toast('Dispensa pronta: ' + c.titolo); aggiornaVista(); return; }
-      if (L.errore) { c.stato = 'parziale'; salva(); JOBS[c.id] = { fase: '', fatti: L.fatti, totali: L.totali, errore: erroreAI({ error: L.errore }) }; SEGUO[c.id] = false; aggiornaVista(); return; }
-      if (Date.now() - (L.agg || 0) > 5 * 60000) { c.stato = 'parziale'; salva(); JOBS[c.id] = { fase: '', fatti: L.fatti, totali: L.totali, errore: 'La preparazione si è interrotta.' }; SEGUO[c.id] = false; aggiornaVista(); return; }
-      JOBS[c.id] = { fase: L.fase, fatti: L.fatti, totali: L.totali, errore: '' }; aggiornaVista();
+      if (L.errore) { c.stato = 'parziale'; salva(); JOBS[c.id] = { fase: L.dove || L.fase, fatti: L.fatti, totali: L.totali, conta: L.conta, errore: erroreAI({ error: L.errore }) }; SEGUO[c.id] = false; aggiornaVista(); return; }
+      if (Date.now() - (L.agg || 0) > 5 * 60000) { c.stato = 'parziale'; salva(); JOBS[c.id] = { fase: L.fase, fatti: L.fatti, totali: L.totali, conta: L.conta, errore: 'La preparazione si è interrotta.' }; SEGUO[c.id] = false; aggiornaVista(); return; }
+      JOBS[c.id] = { fase: L.fase, fatti: L.fatti, totali: L.totali, conta: L.conta, errore: '' }; aggiornaVista();
       setTimeout(giro, 4000);
     }).catch(function () { setTimeout(giro, 6000); });
   };
@@ -259,7 +273,7 @@ function vDispensa(cid) {
   var d = dispLocale(cid);
   if (!d) { v.innerHTML = '<div class="card"><span class="spin"></span></div>'; dispCarica(cid).then(function (x) { if (x && cur.view === 'dispensa') vDispensa(cid); else if (!x) v.innerHTML = '<div class="empty">Dispensa non trovata.</div>'; }); return; }
   var j = JOBS[cid], m = materia(c.materiaId), h = '<button class="back" data-b>← ' + esc(m ? m.nome : 'Studia') + '</button><h1 class="h1" style="font-size:28px">' + esc(c.titolo || d.titolo) + '</h1>';
-  if (j && !j.errore) h += '<div class="dc lav"><div class="attesa"><span class="spin"></span>' + esc(j.fase) + '</div><div class="bar"><i style="width:' + Math.round(j.fatti / Math.max(1, j.totali) * 100) + '%"></i></div></div>';
+  if (j) h += '<div class="dc lav"><div class="attesa">' + (j.errore ? '<b style="color:var(--kob)">Si è fermato: ' + esc(j.errore) + '</b>' : '<span class="spin"></span>' + esc(j.fase)) + '</div>' + fasi(j) + '<div class="bar"><i style="width:' + Math.round(j.fatti / Math.max(1, j.totali) * 100) + '%"></i></div></div>';
   if (d.mappa && d.mappa.rami && d.mappa.rami.length) {
     h += '<div class="paper"><div class="legend"><span><s style="background:var(--y)"></s>concetto chiave</span><span><s style="background:var(--b)"></s>definizione</span><span><s style="background:var(--r)"></s>attenzione</span><span><u style="text-decoration-color:var(--u);text-decoration-thickness:2px">formula</u></span></div>' +
       '<div class="map"><div class="core">' + esc(d.mappa.centro || c.titolo) + '</div>' + d.mappa.rami.map(function (r, k) {

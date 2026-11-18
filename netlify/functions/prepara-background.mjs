@@ -19,13 +19,13 @@ export default async (req) => {
   const prima = await st.get(k, { type: "json" }).catch(() => null);
   if (prima && !prima.fine && !prima.errore && Date.now() - (prima.agg || 0) < 90000) return; // già in corso
 
-  const L = { fase: "Leggo gli argomenti…", fatti: 0, totali: 10, errore: "", fine: false, inizio: Date.now() };
+  const L = { fase: "Leggo gli argomenti…", fatti: 0, totali: 10, errore: "", dove: "", fine: false, inizio: Date.now(), conta: { argomenti: 0, fonti: 0, capitoli: 0, domande: 0, mappa: 0, n: 0 } };
   const salva = () => st.setJSON(k, { ...L, agg: Date.now() }).catch(() => {});
   const passo = async (nome, extra) => {
     const r = await esegui({ uid, cid, passo: nome, materia: b.materia, ...extra });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { const e = new Error(j.error || "errore"); e.codice = j.error || "errore"; throw e; }
-    L.fatti++; await salva();
+    L.fatti++; L.conta[{ argomenti: "argomenti", ricerca: "fonti", capitolo: "capitoli", domande: "domande", mappa: "mappa" }[nome]]++; await salva();
     return j;
   };
   await salva();
@@ -34,11 +34,13 @@ export default async (req) => {
     if (!d) throw Object.assign(new Error("nessuno"), { codice: "nessuno" });
     if (!d.argomenti.length) { await passo("argomenti"); d = await assembla(uid, cid); }
     const n = d.argomenti.length, idx = d.argomenti.map((a, i) => i);
+    L.conta = { argomenti: 1, fonti: Object.keys(d.ricerca).length, capitoli: Object.keys(d.capitoli).length, domande: Object.keys(d.domande).length, mappa: d.mappa ? 1 : 0, n };
     L.totali = 1 + n * 3 + 1;
     L.fatti = 1 + Object.keys(d.ricerca).length + Object.keys(d.capitoli).length + Object.keys(d.domande).length + (d.mappa ? 1 : 0);
     L.fase = `Cerco fonti affidabili per ${n} ${n === 1 ? "argomento" : "argomenti"}…`; await salva();
     await aParti(idx.filter((i) => !d.ricerca[i]), 4, (i) => passo("ricerca", { indice: i }));
     d = await assembla(uid, cid);
+    for (let t = 0; t < 5 && d.argomenti.some((a, i) => !d.ricerca[i]); t++) { await new Promise((r) => setTimeout(r, 1500)); d = await assembla(uid, cid); }
     L.fase = "Scrivo i capitoli…"; await salva();
     let pronti = Object.keys(d.capitoli).length;
     const capEDom = async (i) => {
@@ -52,7 +54,7 @@ export default async (req) => {
     if (!d.mappa) { L.fase = "Disegno la mappa…"; await salva(); await passo("mappa"); }
     L.fase = "Dispensa pronta"; L.fine = true; L.fatti = L.totali; await salva();
   } catch (e) {
-    L.errore = (e && e.codice) || "errore"; await salva();
+    L.errore = (e && e.codice) || "errore"; L.dove = L.fase; await salva();
     console.error("prepara", cid, L.errore);
   }
 };

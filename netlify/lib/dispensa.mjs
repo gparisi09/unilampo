@@ -27,9 +27,13 @@ export async function assembla(uid, cid) {
   const m = await leggiMeta(uid, cid);
   if (!m) return null;
   const p = store("pezzi"), pre = base(uid, cid) + "/";
-  const l = await p.list({ prefix: pre }).catch(() => ({ blobs: [] }));
+  // i pezzi noti si leggono uno per uno (sicuro anche subito dopo la scrittura); gli approfondimenti dall'elenco
+  const nomi = ["mappa"];
+  (m.argomenti || []).forEach((a, i) => nomi.push("ricerca/" + i, "capitolo/" + i, "domande/" + i));
+  const l = await p.list({ prefix: pre + "app/" }).catch(() => ({ blobs: [] }));
+  (l.blobs || []).forEach((b) => nomi.push(b.key.slice(pre.length)));
   const pezzi = {};
-  await Promise.all((l.blobs || []).map(async (b) => { pezzi[b.key.slice(pre.length)] = await p.get(b.key, { type: "json" }).catch(() => null); }));
+  await Promise.all(nomi.map(async (k) => { pezzi[k] = await p.get(pre + k, { type: "json" }).catch(() => null); }));
   const d = { ...m, argomenti: m.argomenti || [], ricerca: {}, fonti: [], capitoli: {}, mappa: pezzi.mappa || null, domande: {}, approfondimenti: {} };
   const aggiungi = (f) => {
     let g = d.fonti.find((x) => normUrl(x.url) === normUrl(f.url));

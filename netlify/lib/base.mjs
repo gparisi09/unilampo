@@ -2,7 +2,8 @@ import { getStore } from "@netlify/blobs";
 import { TETTO_GIORNO } from "./regole.mjs";
 
 // Archivio (Netlify Blobs). Nelle prove in locale si usa una memoria finta.
-export const store = (nome) => (globalThis.__memStore ? globalThis.__memStore(nome) : getStore(nome));
+// Lettura "forte": quello che è appena stato scritto si legge subito (serve ai passaggi in parallelo).
+export const store = (nome) => (globalThis.__memStore ? globalThis.__memStore(nome) : getStore({ name: nome, consistency: "strong" }));
 
 export const json = (o, s = 200) =>
   new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json", "cache-control": "no-store" } });
