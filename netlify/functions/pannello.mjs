@@ -1,5 +1,6 @@
 import { store, json, chiavePropria, aiAccesa, controllaPin, oggi, tettoOggi } from "../lib/base.mjs";
 import * as R from "../lib/regole.mjs";
+import { chiaveOpenAI } from "../lib/openai.mjs";
 
 // Pannello del titolare (/pannello): stato AI, interruttore, spesa e tester. Tutto dietro il PIN.
 export default async (req) => {
@@ -45,7 +46,7 @@ export default async (req) => {
   const ultimoErrore = await store("config").get("ultimoErrore", { type: "json" }).catch(() => null);
   return json({
     ultimoErrore,
-    accesa: await aiAccesa(), chiave: chiavePropria(), tetto: await tettoOggi(), tettoBase: R.TETTO_GIORNO, extraMax: R.EXTRA_MAX_GIORNO, oggi: og, giorni, tester,
+    accesa: await aiAccesa(), chiave: chiavePropria(), chiaveVoce: chiaveOpenAI(), tetto: await tettoOggi(), tettoBase: R.TETTO_GIORNO, extraMax: R.EXTRA_MAX_GIORNO, oggi: og, giorni, tester,
     regole: { ECONOMICO: R.ECONOMICO, COSTOSO: R.COSTOSO, PREZZI: R.PREZZI, PREZZO_RICERCA: R.PREZZO_RICERCA, MAX_FONTI_PER_ARGOMENTO: R.MAX_FONTI_PER_ARGOMENTO, RICERCHE_PER_ARGOMENTO: R.RICERCHE_PER_ARGOMENTO, MAX_ARGOMENTI: R.MAX_ARGOMENTI },
   });
 };

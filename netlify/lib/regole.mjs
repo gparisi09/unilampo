@@ -61,3 +61,12 @@ export function stimaPassaggio(passo, { caratteri = 0, ricerche = 0, cacheLetta 
   return { modello, usd: Math.round(usd * 1e5) / 1e5 };
 }
 export const EXTRA_MAX_GIORNO = 3; // dollari in più che il pannello può aggiungere in un giorno
+
+// Voce e ascolto dell'orale (OpenAI, con la chiave dell'utente; listino OpenAI, stime per minuto):
+//   gpt-4o-mini-tts circa 0,015 dollari al minuto di voce; gpt-4o-mini-transcribe 0,003 dollari al minuto.
+// Si contano nello stesso tetto giornaliero dell'AI.
+export const VOCE_MODELLO = "gpt-4o-mini-tts";
+export const VOCE = "sage";
+export const TRASCRIZIONE_MODELLO = "gpt-4o-mini-transcribe";
+export const USD_VOCE_PER_CARATTERE = 0.015 / 900; // circa 900 caratteri di italiano parlato al minuto
+export const USD_TRASCRIZIONE_AL_SECONDO = 0.003 / 60;
