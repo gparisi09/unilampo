@@ -41,33 +41,266 @@ function dispCarica(cid) {
 // ---------- AI: stato (costi e regole sono solo nel pannello) ----------
 var AI = { accesa: false, maxFonti: 3, maxCaratteri: 60000, letto: false };
 function leggiStato() { return api('/api/stato').then(function (r) { r.letto = true; AI = r; return r; }).catch(function () { AI.letto = true; return AI; }); }
-function genera(cid, passo, extra) { return api('/api/genera', Object.assign({ uid: S.uid, cid: cid, passo: passo }, extra || {})); }
+function genera(cid, passo, extra) { var c = S.caricamenti.find(function (x) { return x.id === cid; }), m = c && materia(c.materiaId); return api('/api/genera', Object.assign({ uid: S.uid, cid: cid, passo: passo, materia: m ? m.nome : '' }, extra || {})); }
 var PAUSA = 'Il generatore è in pausa: le dispense già pronte, i test e il ripasso funzionano. Riprova più tardi.';
 function erroreAI(e) {
   if (e && (e.error === 'spenta' || e.error === 'tetto')) return PAUSA;
   return 'Il generatore non risponde: riprova tra poco.';
 }
 
-// ---------- navigazione ----------
-var cur = { view: 'materie', tab: 'materie' }, VIEWS = ['materie', 'materia', 'carica', 'dispense', 'dispensa', 'test', 'orale', 'ripasso', 'set'];
-var TABOF = { materie: 'materie', materia: 'materie', carica: 'materie', set: 'materie', dispense: 'dispense', dispensa: 'dispense', test: 'test', orale: 'orale', ripasso: 'ripasso' };
+
+// ---------- navigazione: 3 sezioni, niente pagine dentro pagine ----------
+var cur = { view: 'studia', tab: 'studia' }, VIEWS = ['studia', 'dispensa', 'test', 'orale'];
+var TABOF = { studia: 'studia', dispensa: 'studia', test: 'test', orale: 'orale' };
 function mostra(v, arg) {
   if (cur.view === 'orale' && v !== 'orale') fermaOrale();
   cur.view = v; cur.arg = arg; cur.tab = TABOF[v];
   VIEWS.forEach(function (x) { $('v-' + x).classList.toggle('on', x === v); });
   document.querySelectorAll('nav.tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === cur.tab); });
-  ({ materie: vMaterie, materia: vMateria, carica: vCarica, dispense: vDispense, dispensa: vDispensa, test: vTest, orale: vOrale, ripasso: vRipasso, set: vSet })[v](arg);
+  ({ studia: vStudia, dispensa: vDispensa, test: vTest, orale: vOrale })[v](arg);
   window.scrollTo(0, 0);
 }
-function rerender() { mostra(cur.view, cur.arg); }
-document.querySelectorAll('nav.tabs button').forEach(function (b) { b.addEventListener('click', function () { mostra(b.dataset.tab); }); });
-$('go-home').addEventListener('click', function () { mostra('materie'); });
-$('go-set').addEventListener('click', function () { mostra('set'); });
+function rerender() { var y = window.scrollY; mostra(cur.view, cur.arg); window.scrollTo(0, y); }
+document.querySelectorAll('nav.tabs button').forEach(function (b) { b.addEventListener('click', function () { if (b.dataset.tab === 'test') T = null; mostra(b.dataset.tab); }); });
+$('go-home').addEventListener('click', function () { mostra('studia'); });
 function sheet(html, onOpen) { $('sheet-in').innerHTML = '<div class="grab"></div>' + html; $('sheet').classList.add('on'); document.body.style.overflow = 'hidden'; if (onOpen) onOpen($('sheet-in')); }
 function chiudiSheet() { $('sheet').classList.remove('on'); document.body.style.overflow = ''; }
 $('sheet').addEventListener('click', function (e) { if (e.target.hasAttribute('data-close')) chiudiSheet(); });
 document.addEventListener('focusin', function (e) { if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) document.body.classList.add('kb'); });
 document.addEventListener('focusout', function () { setTimeout(function () { if (!/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '')) document.body.classList.remove('kb'); }, 50); });
+var MATITA = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>';
+
+// Materie in alto: le stesse in Studia, Test e Orale.
+function materiaCorrente() { if (!S.materie.length) return null; if (!materia(S.ultimaMateria)) S.ultimaMateria = S.materie[0].id; return materia(S.ultimaMateria); }
+function barraMaterie(conAggiungi) {
+  var m = materiaCorrente();
+  return '<div class="mat">' + S.materie.map(function (x) { return '<button type="button" data-mat="' + x.id + '" class="' + (m && x.id === m.id ? 'on' : '') + '">' + esc(x.nome) + '</button>'; }).join('') + (conAggiungi ? '<button type="button" class="add" data-nuova>+ Materia</button>' : '') + '</div>';
+}
+function legaMaterie(root) {
+  root.querySelectorAll('[data-mat]').forEach(function (b) { b.onclick = function () { S.ultimaMateria = b.dataset.mat; salva(); rerender(); }; });
+  var n = root.querySelector('[data-nuova]'); if (n) n.onclick = function () { schedaMateria(null); };
+}
+// Crea o rinomina una materia (ed eliminala).
+function schedaMateria(m) {
+  sheet('<h2 style="font-size:24px">' + (m ? 'Modifica materia' : 'Nuova materia') + '</h2><div class="field"><label for="nm">Nome della materia</label><input id="nm" maxlength="80" placeholder="es. Diritto privato" autocomplete="off" value="' + esc(m ? m.nome : '') + '"></div>' +
+    '<button class="btn" id="nm-ok">' + (m ? 'Salva' : 'Aggiungi') + '</button>' + (m ? '<button class="btn ghost" id="nm-del" style="color:var(--kob)">Elimina materia e dispense</button>' : '') + '<button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
+    var i = r.querySelector('#nm'); setTimeout(function () { i.focus(); if (m) i.select(); }, 120);
+    var ok = function () { var n = i.value.trim(); if (!n) return; if (m) m.nome = n; else { var x = { id: nid('m'), nome: n }; S.materie.push(x); S.ultimaMateria = x.id; } salva(); chiudiSheet(); rerender(); };
+    r.querySelector('#nm-ok').onclick = ok; i.onkeydown = function (e) { if (e.key === 'Enter') ok(); };
+    r.querySelector('[data-close]').onclick = chiudiSheet;
+    var d = r.querySelector('#nm-del'); if (d) d.onclick = function () {
+      if (!confirm('Eliminare ' + m.nome + ' con tutte le sue dispense?')) return;
+      carDi(m.id).forEach(function (c) { api('/api/caricamento?uid=' + S.uid + '&cid=' + c.id, null, 'DELETE').catch(function () {}); try { localStorage.removeItem('ul-d-' + c.id); } catch (e) {} });
+      S.caricamenti = S.caricamenti.filter(function (c) { return c.materiaId !== m.id; }); S.materie = S.materie.filter(function (x) { return x.id !== m.id; }); salva(); chiudiSheet(); rerender();
+    };
+  });
+}
+
+// ---------- STUDIA ----------
+function vStudia() {
+  var v = $('v-studia'), m = materiaCorrente(), h = '';
+  if (!m) {
+    v.innerHTML = '<h1 class="h1">Cosa studi?</h1><div class="hero"><span class="lab">Primo passo</span><h2>Aggiungi una materia</h2><span style="font-size:14.5px;color:#D6E6F5">Poi carichi gli appunti: UniLampo prepara la dispensa con mappa, fonti verificate, test e orale.</span>' +
+      '<div class="field"><input id="pm" maxlength="80" placeholder="es. Microeconomia" autocomplete="off" style="border-color:transparent"></div><button class="btn" id="pm-ok">Aggiungi</button></div>';
+    var add = function () { var n = $('pm').value.trim(); if (!n) return; var x = { id: nid('m'), nome: n }; S.materie.push(x); S.ultimaMateria = x.id; salva(); vStudia(); };
+    $('pm-ok').onclick = add; $('pm').onkeydown = function (e) { if (e.key === 'Enter') add(); };
+    return;
+  }
+  var st = statMateria(m.id), car = carDi(m.id).slice().reverse(), nq = domandeMateria(m.id).length, due = daRipassare(m.id);
+  h += barraMaterie(true);
+  h += '<div class="hero"><div class="flex"><span class="lab">Materia</span></div><h2>' + esc(m.nome) + '<button class="ed" type="button" data-ed aria-label="Modifica nome">' + MATITA + '</button></h2>' +
+    '<div class="stat"><div><b>' + (st.pct === null ? '–' : st.pct + '%') + '</b><span>risposte giuste</span></div><div><b>' + (function (k) { return k + '</b><span>' + (k === 1 ? 'dispensa' : 'dispense'); })(car.filter(function (c) { return c.stato === 'pronta'; }).length) + '</span></div><div><b>' + nq + '</b><span>' + (nq === 1 ? 'domanda' : 'domande') + '</span></div></div></div>';
+  if (due.length) h += '<button class="giallo" data-rip><span>Ripassa le ' + due.length + (due.length === 1 ? ' domanda sbagliata' : ' domande sbagliate') + '</span><span class="fr">→</span></button>';
+  h += '<label class="up"><input type="file" id="up-file" accept=".pdf,.txt,.md,application/pdf,text/plain"><span class="plus">+</span><span><b>Carica appunti</b><span>PDF o testo · la dispensa si prepara da sola</span></span></label>';
+  h += '<button class="linkap" data-incolla style="align-self:center">oppure incolla il testo</button>';
+  if (car.length) h += '<div class="sez">Dispense <small>' + car.length + '</small></div>';
+  car.forEach(function (c) { h += cartaDispensa(c); });
+  if (!car.length) h += '<div class="empty"><b>Nessuna dispensa per ' + esc(m.nome) + '</b><span>Carica il primo PDF di appunti: in circa un minuto hai capitoli spiegati, mappa a colori, fonti e domande.</span></div>';
+  h += '<div class="foot"><span>Il tuo codice: <b style="user-select:all">' + esc(S.uid) + '</b></span><button type="button" data-codice>Usa i tuoi dati su un altro telefono</button></div>';
+  v.innerHTML = h;
+  legaMaterie(v);
+  v.querySelector('[data-ed]').onclick = function () { schedaMateria(m); };
+  var r = v.querySelector('[data-rip]'); if (r) r.onclick = function () { avviaTest({ tipo: 'ripasso', mid: m.id }); };
+  $('up-file').onchange = function (e) { var f = e.target.files[0]; if (f) caricaFile(m, f); e.target.value = ''; };
+  v.querySelector('[data-incolla]').onclick = function () { incolla(m); };
+  v.querySelector('[data-codice]').onclick = schedaCodice;
+  v.querySelectorAll('[data-apri]').forEach(function (b) { b.onclick = function () { mostra('dispensa', b.dataset.apri); }; });
+  v.querySelectorAll('[data-test]').forEach(function (b) { b.onclick = function () { avviaTest({ tipo: 'verifica', cid: b.dataset.test }); }; });
+  v.querySelectorAll('[data-orale]').forEach(function (b) { b.onclick = function () { S.ultimaMateria = m.id; S.oraleCid = b.dataset.orale; salva(); mostra('orale'); }; });
+  v.querySelectorAll('[data-riprendi]').forEach(function (b) { b.onclick = function () { var c = S.caricamenti.find(function (x) { return x.id === b.dataset.riprendi; }); if (c) prepara(c); }; });
+}
+function cartaDispensa(c) {
+  var j = JOBS[c.id], d = dispLocale(c.id), nCap = d ? Object.keys(d.capitoli || {}).length : 0, nArg = d ? d.argomenti.length : 0;
+  if (c.stato === 'pronta') {
+    var nq = domandeDi(c.id).length;
+    return '<div class="dc"><button class="tt" data-apri="' + c.id + '"><span><h3>' + esc(c.titolo) + '</h3><span class="note">' + nCap + (nCap === 1 ? ' capitolo' : ' capitoli') + ' · ' + nq + ' domande · ' + giornoIt(c.data) + '</span></span><span class="go">›</span></button>' +
+      '<div class="row"><button class="btn v small" data-test="' + c.id + '"' + (nq ? '' : ' disabled') + '>Test</button><button class="btn ghost small" data-orale="' + c.id + '" style="color:var(--blu)">Orale</button></div></div>';
+  }
+  var pct = j ? Math.round(j.fatti / Math.max(1, j.totali) * 100) : 0, testo = j ? (j.errore ? j.errore : j.fase) : 'Preparazione interrotta';
+  return '<div class="dc lav"><div class="tt"><span><h3>' + esc(c.titolo) + '</h3><span class="note">' + esc(testo) + '</span></span>' + (j && !j.errore ? '<span class="spin"></span>' : '') + '</div>' +
+    '<div class="bar"><i style="width:' + pct + '%"></i></div>' + (j && !j.errore ? '<span class="note">Puoi anche chiudere l\'app: continuo io. Quando torni la trovi qui.</span>' : '') +
+    (nCap ? '<button class="btn small" data-apri="' + c.id + '">Inizia a leggere →</button>' : '') +
+    (!j || j.errore ? '<button class="btn v small" data-riprendi="' + c.id + '"' + (AI.accesa ? '' : ' disabled') + '>Riprendi da dove si è fermata</button>' + (AI.accesa ? '' : notaAI()) : '') + '</div>';
+}
+function schedaCodice() {
+  sheet('<h2 style="font-size:22px">Il tuo codice</h2><span style="font-size:14px">Con questo codice ritrovi materie, dispense e progressi su un altro telefono.</span><b style="font-family:\'Bricolage Grotesque\';font-size:22px;user-select:all">' + esc(S.uid) + '</b>' +
+    '<div class="field"><label for="s-cod">Usa un altro codice</label><input id="s-cod" placeholder="u…" autocomplete="off" autocapitalize="off"></div><button class="btn" id="s-usa">Passa a questo codice</button><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) {
+    r.querySelector('[data-close]').onclick = chiudiSheet;
+    r.querySelector('#s-usa').onclick = function () {
+      var c = $('s-cod').value.trim().toLowerCase(); if (!/^u[a-z0-9]{8,30}$/.test(c)) return toast('Codice non valido.');
+      api('/api/dati?uid=' + c).then(function (x) { if (!x.data) return toast('Nessun dato con questo codice.'); S = x.data; S.uid = c; try { localStorage.setItem('unilampo', JSON.stringify(S)); } catch (e) {} chiudiSheet(); toast('Fatto: dati caricati'); S.caricamenti.forEach(function (k) { dispCarica(k.id).then(function () { if (cur.view === 'studia') rerender(); }); }); mostra('studia'); }).catch(function () { toast('Non riesco a controllare il codice.'); });
+    };
+  });
+}
+function incolla(m) {
+  sheet('<h2 style="font-size:22px">Incolla gli appunti</h2><textarea class="in" id="ic" rows="9" placeholder="Incolla qui il testo"></textarea><button class="btn" id="ic-ok">Prepara la dispensa</button><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
+    r.querySelector('[data-close]').onclick = chiudiSheet;
+    r.querySelector('#ic-ok').onclick = function () { var t = $('ic').value.trim(); if (t.length < 200) return toast('Il testo è troppo corto.'); chiudiSheet(); nuovoCaricamento(m, t, '', 'Appunti incollati'); };
+  });
+}
+function caricaFile(m, f) {
+  toast('Leggo ' + f.name + '…');
+  leggiFile(f).then(function (r) {
+    if (r.testo.trim().length < 200) { sheet('<h2 style="font-size:21px">Testo non trovato</h2><span style="font-size:14.5px">Questo PDF sembra una scansione (immagini, non testo). Per ora UniLampo legge solo PDF con testo selezionabile: prova a esportarlo di nuovo, oppure incolla il testo.</span><button class="btn" data-close>Ho capito</button>', function (x) { x.querySelector('[data-close]').onclick = chiudiSheet; }); return; }
+    nuovoCaricamento(m, r.testo, f.name, f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 100));
+  }).catch(function () { toast('Non riesco a leggere il file.'); });
+}
+function nuovoCaricamento(m, testo, file, titolo) {
+  if (!AI.accesa) { toast(PAUSA); }
+  var cid = nid('c');
+  api('/api/caricamento', { uid: S.uid, cid: cid, materia: m.nome, titolo: titolo, file: file, testo: testo }).then(function (r) {
+    var c = { id: cid, materiaId: m.id, titolo: titolo, file: file, data: new Date().toISOString(), caratteri: r.caratteri, stato: 'nuovo' };
+    S.caricamenti.push(c); salva();
+    if (r.tagliato) toast('Appunti lunghi: uso la prima parte. Per il resto fai un altro caricamento.');
+    if (AI.accesa) prepara(c); else rerender();
+  }).catch(function (e) { toast(e && e.error === 'corto' ? 'Il testo è troppo corto.' : 'Non riesco a salvare: controlla la connessione.'); });
+}
+
+// ---------- preparazione della dispensa, in parallelo ----------
+var JOBS = {};
+function aggiornaVista() { if (cur.view === 'studia' || (cur.view === 'dispensa')) rerender(); }
+function aParti(lista, quanti, fn) { // esegue fn su ogni elemento, al massimo `quanti` alla volta
+  var i = 0, err = null;
+  return new Promise(function (ok, ko) {
+    var attivi = 0;
+    var avanti = function () {
+      if (err) return;
+      if (i >= lista.length && attivi === 0) return ok();
+      while (attivi < quanti && i < lista.length) { var x = lista[i++]; attivi++; fn(x).then(function () { attivi--; avanti(); }, function (e) { err = e; ko(e); }); }
+    };
+    avanti();
+  });
+}
+// Di base la dispensa la prepara il server, in background: continua anche ad app chiusa.
+// Se il background non parte, la prepara il telefono (riserva).
+var SEGUO = {};
+function prepara(c) {
+  if (JOBS[c.id] && !JOBS[c.id].errore) return;
+  JOBS[c.id] = { fase: 'Avvio la preparazione…', fatti: 0, totali: 10, errore: '' }; aggiornaVista();
+  var m = materia(c.materiaId);
+  fetch('/api/prepara', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ uid: S.uid, cid: c.id, materia: m ? m.nome : '' }) })
+    .then(function (r) { if (r.status === 202 || r.ok) setTimeout(function () { segui(c); }, 2500); else { delete JOBS[c.id]; preparaQui(c); } })
+    .catch(function () { delete JOBS[c.id]; preparaQui(c); });
+}
+// Controlla ogni pochi secondi a che punto è il lavoro sul server.
+function segui(c) {
+  if (SEGUO[c.id]) return; SEGUO[c.id] = true;
+  var giro = function () {
+    dispCarica(c.id).then(function (d) {
+      var L = d && d.lavoro;
+      if (d && d.titolo && (c.titolo === c.file || c.titolo === String(c.file || '').replace(/\.[a-z0-9]+$/i, '') || c.titolo === 'Appunti incollati')) { c.titolo = d.titolo; salva(); }
+      if (!L) { SEGUO[c.id] = false; return; }
+      if (L.fine) { c.stato = 'pronta'; salva(); delete JOBS[c.id]; SEGUO[c.id] = false; toast('Dispensa pronta: ' + c.titolo); aggiornaVista(); return; }
+      if (L.errore) { c.stato = 'parziale'; salva(); JOBS[c.id] = { fase: '', fatti: L.fatti, totali: L.totali, errore: erroreAI({ error: L.errore }) }; SEGUO[c.id] = false; aggiornaVista(); return; }
+      if (Date.now() - (L.agg || 0) > 5 * 60000) { c.stato = 'parziale'; salva(); JOBS[c.id] = { fase: '', fatti: L.fatti, totali: L.totali, errore: 'La preparazione si è interrotta.' }; SEGUO[c.id] = false; aggiornaVista(); return; }
+      JOBS[c.id] = { fase: L.fase, fatti: L.fatti, totali: L.totali, errore: '' }; aggiornaVista();
+      setTimeout(giro, 4000);
+    }).catch(function () { setTimeout(giro, 6000); });
+  };
+  giro();
+}
+function preparaQui(c) {
+  if (JOBS[c.id] && !JOBS[c.id].errore) return;
+  var j = JOBS[c.id] = { fase: 'Leggo gli argomenti…', fatti: 0, totali: 10, errore: '' };
+  var ricarica = function () { return dispCarica(c.id); };
+  var passo = function (nome, extra) { return genera(c.id, nome, extra).then(function (r) { j.fatti++; return r; }); };
+  aggiornaVista();
+  dispCarica(c.id).then(function (d) {
+    d = d || { argomenti: [] };
+    return (d.argomenti.length ? Promise.resolve(d) : passo('argomenti').then(function (r) { if (r.dato.titolo && (c.titolo === c.file || c.titolo === String(c.file || '').replace(/\.[a-z0-9]+$/i, '') || c.titolo === 'Appunti incollati')) c.titolo = r.dato.titolo; salva(); return ricarica(); }));
+  }).then(function (d) {
+    var n = d.argomenti.length, idx = d.argomenti.map(function (a, i) { return i; });
+    j.totali = 1 + n * 3 + 1; j.fatti = 1 + Object.keys(d.ricerca).length + Object.keys(d.capitoli).length + Object.keys(d.domande).length + (d.mappa ? 1 : 0);
+    j.fase = 'Cerco fonti affidabili per ' + n + (n === 1 ? ' argomento…' : ' argomenti…'); aggiornaVista();
+    return aParti(idx.filter(function (i) { return !d.ricerca[i]; }), 4, function (i) { return passo('ricerca', { indice: i }).then(aggiornaVista); })
+      .then(ricarica).then(function (d2) {
+        j.fase = 'Scrivo i capitoli…'; aggiornaVista();
+        var capEDom = function (i) {
+          return (d2.capitoli[i] ? Promise.resolve() : passo('capitolo', { indice: i }).then(ricarica).then(function () { j.fase = 'Scrivo i capitoli · ' + Object.keys((dispLocale(c.id) || {}).capitoli || {}).length + ' di ' + n + ' pronti'; aggiornaVista(); }))
+            .then(function () { return d2.domande[i] ? null : passo('domande', { indice: i }); });
+        };
+        // il primo capitolo da solo (prepara la memoria condivisa degli appunti), poi gli altri insieme
+        return capEDom(0).then(function () { return aParti(idx.slice(1), 3, capEDom); });
+      }).then(ricarica).then(function (d3) {
+        if (d3.mappa) return d3;
+        j.fase = 'Disegno la mappa…'; aggiornaVista();
+        return passo('mappa').then(ricarica);
+      });
+  }).then(function () {
+    c.stato = 'pronta'; salva(); delete JOBS[c.id]; toast('Dispensa pronta: ' + c.titolo); aggiornaVista();
+  }).catch(function (e) {
+    c.stato = 'parziale'; salva(); j.errore = erroreAI(e); ricarica().then(aggiornaVista);
+  });
+}
+
+// ---------- DISPENSA ----------
+function vDispensa(cid) {
+  var v = $('v-dispensa'), c = S.caricamenti.find(function (x) { return x.id === cid; }); if (!c) return mostra('studia');
+  var d = dispLocale(cid);
+  if (!d) { v.innerHTML = '<div class="card"><span class="spin"></span></div>'; dispCarica(cid).then(function (x) { if (x && cur.view === 'dispensa') vDispensa(cid); else if (!x) v.innerHTML = '<div class="empty">Dispensa non trovata.</div>'; }); return; }
+  var j = JOBS[cid], m = materia(c.materiaId), h = '<button class="back" data-b>← ' + esc(m ? m.nome : 'Studia') + '</button><h1 class="h1" style="font-size:28px">' + esc(c.titolo || d.titolo) + '</h1>';
+  if (j && !j.errore) h += '<div class="dc lav"><div class="attesa"><span class="spin"></span>' + esc(j.fase) + '</div><div class="bar"><i style="width:' + Math.round(j.fatti / Math.max(1, j.totali) * 100) + '%"></i></div></div>';
+  if (d.mappa && d.mappa.rami && d.mappa.rami.length) {
+    h += '<div class="paper"><div class="legend"><span><s style="background:var(--y)"></s>concetto chiave</span><span><s style="background:var(--b)"></s>definizione</span><span><s style="background:var(--r)"></s>attenzione</span><span><u style="text-decoration-color:var(--u);text-decoration-thickness:2px">formula</u></span></div>' +
+      '<div class="map"><div class="core">' + esc(d.mappa.centro || c.titolo) + '</div>' + d.mappa.rami.map(function (r, k) {
+        var key = 'r' + k, gia = d.approfondimenti[key];
+        return '<div class="node c' + ((k % 6) + 1) + '"><b>' + esc(r.titolo) + '</b><span>' + esc(r.testo) + '</span><button type="button" class="ap" data-ap="' + key + '" data-cap="' + Math.max(0, r.capitolo - 1) + '" data-txt="' + esc(r.titolo + ': ' + r.testo) + '">' + (gia ? 'Approfondito ✓' : '+ Approfondisci') + '</button></div>';
+      }).join('') + '</div></div>';
+  }
+  d.argomenti.forEach(function (a, i) {
+    var cp = d.capitoli[i];
+    if (!cp) { h += '<div class="paper c' + ((i % 6) + 1) + '" style="opacity:.75"><h3><span class="n">' + (i + 1) + '</span>' + esc(a.titolo) + '</h3><div class="attesa">' + (j && !j.errore ? '<span class="spin"></span>In scrittura…' : 'Non ancora scritto') + '</div></div>'; return; }
+    h += '<div class="paper c' + ((i % 6) + 1) + '" id="cap' + i + '"><h3><span class="n">' + (i + 1) + '</span>' + esc(cp.titolo) + '</h3>';
+    cp.paragrafi.forEach(function (p, k) {
+      var key = 'c' + i + 'p' + k, ap = d.approfondimenti[key];
+      h += '<p>' + marca(p) + ' <button type="button" class="linkap' + (ap ? ' salvato' : '') + '" data-ap="' + key + '" data-cap="' + i + '" data-txt="' + esc(p.replace(/\[\[[gcru]\|([^\]]*)\]\]/g, '$1')) + '">' + (ap ? '✓ Approfondito' : '+ Approfondisci') + '</button></p>';
+      if (ap) h += boxApp(ap);
+    });
+    if (cp.esempio) h += '<div class="box es"><span class="t">Esempio</span>' + marca(cp.esempio) + '</div>';
+    if (cp.trappola) h += '<div class="box tr"><span class="t">Trappola</span>' + marca(cp.trappola) + '</div>';
+    if (cp.ricorda) h += '<div class="box rem"><span class="t">Da ricordare</span>' + marca(cp.ricorda) + '</div>';
+    if (cp.confronto && cp.confronto.length) h += '<span class="lab">I tuoi appunti a confronto con le fonti</span><div class="cmp">' + cp.confronto.map(function (x) {
+      var ic = x.tipo === 'ok' ? '<i class="ic i-ok">✓</i>' : x.tipo === 'incompleto' ? '<i class="ic i-w">!</i>' : '<i class="ic i-no">≠</i>';
+      return '<div>' + ic + '<span>' + (x.tipo === 'incompleto' ? '<b>Incompleto:</b> ' : x.tipo === 'diverso' ? '<b>Diverso:</b> ' : '') + marca(x.testo) + '</span></div>';
+    }).join('') + '</div>';
+    var mie = (d.ricerca[i] && d.ricerca[i].nums) || [];
+    h += '<div class="srcs"><span class="t">Fonti</span>' + (mie.length ? mie.map(function (n) { var f = (d.fonti || []).find(function (x) { return x.n === n; }); return f ? '<span>[' + n + '] <a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.titolo) + '</a>' + (f.sito ? ' · ' + esc(f.sito) : '') + '</span>' : ''; }).join('') : '<span>Nessuna fonte affidabile trovata: il capitolo si basa sui tuoi appunti.</span>') + '</div></div>';
+  });
+  var nq = domandeDi(cid).length;
+  if (nq) h += '<button class="btn v" data-ver>Fai il test su questa dispensa · ' + nq + ' domande</button>';
+  h += '<button class="linkap" data-del style="color:var(--kob);align-self:center">Elimina questa dispensa</button>';
+  v.innerHTML = h;
+  v.querySelector('[data-b]').onclick = function () { mostra('studia'); };
+  v.querySelectorAll('[data-ap]').forEach(function (b) { b.onclick = function () { approfondisci(c, d, b.dataset.ap, +b.dataset.cap, b.dataset.txt); }; });
+  v.querySelectorAll('[data-fonte]').forEach(function (b) { b.onclick = function () { mostraFonte(d, +b.dataset.fonte); }; });
+  var ver = v.querySelector('[data-ver]'); if (ver) ver.onclick = function () { avviaTest({ tipo: 'verifica', cid: cid }); };
+  v.querySelector('[data-del]').onclick = function () {
+    if (!confirm('Eliminare questa dispensa?')) return;
+    api('/api/caricamento?uid=' + S.uid + '&cid=' + cid, null, 'DELETE').catch(function () {}); try { localStorage.removeItem('ul-d-' + cid); } catch (e) {}
+    S.caricamenti = S.caricamenti.filter(function (x) { return x.id !== cid; }); salva(); mostra('studia');
+  };
+}
+
 
 // ---------- calcoli di studio ----------
 function materia(id) { return S.materie.find(function (m) { return m.id === id; }); }
@@ -114,110 +347,8 @@ function argomentiDeboli() {
 }
 function titoloCap(cid, cap) { var d = dispLocale(cid); return d && d.capitoli[cap] ? d.capitoli[cap].titolo : (d && d.argomenti[cap] ? d.argomenti[cap].titolo : 'Argomento'); }
 
-// ---------- MATERIE (home) ----------
-function vMaterie() {
-  var v = $('v-materie'), due = daRipassare(), h = '';
-  if (due.length) h += '<div class="dark"><span class="lab">Oggi</span><div class="big">Ripassa le <em>' + due.length + ' domand' + (due.length === 1 ? 'a' : 'e') + '</em> che hai sbagliato</div><button class="btn small" style="align-self:flex-start" data-act="ripasso-oggi">Inizia il ripasso</button></div>';
-  h += '<div class="card"><div class="flex"><span class="lab">Le tue materie</span><span class="note">' + S.materie.length + (S.materie.length === 1 ? ' materia' : ' materie') + '</span></div>';
-  if (!S.materie.length) h += '<div class="note" style="font-size:14px">Aggiungi le materie che stai preparando, poi carica gli appunti di ognuna.</div>';
-  S.materie.forEach(function (m) {
-    var st = statMateria(m.id), car = carDi(m.id), debole = st.tot >= 5 && st.pct < 60, nq = domandeMateria(m.id).length;
-    h += '<button class="matbtn' + (debole ? ' debole' : '') + '" data-mat="' + m.id + '"><span class="mt"><b>' + esc(m.nome) + '</b>' + (debole ? '<span class="tag red">Da rinforzare</span>' : '<span class="go">' + (st.pct === null ? 'Apri' : st.pct + '%') + ' →</span>') + '</span>' +
-      '<span class="bar"><i class="' + (debole ? 'low' : '') + '" style="width:' + (st.pct || 0) + '%"></i></span>' +
-      '<span class="note">' + car.length + (car.length === 1 ? ' dispensa' : ' dispense') + ' · ' + nq + ' domande' + (st.tot ? ' · ' + st.tot + ' risposte date' : '') + '</span></button>';
-  });
-  h += '<div class="row"><button class="btn ghost small" data-act="nuova-materia" style="color:var(--blu)">+ Materia</button>' + (S.materie.length ? '<button class="btn" data-act="carica">+ Carica appunti</button>' : '') + '</div></div>';
-  v.innerHTML = h;
-  v.querySelectorAll('[data-mat]').forEach(function (b) { b.onclick = function () { mostra('materia', b.dataset.mat); }; });
-  azioni(v);
-}
-function azioni(root) {
-  root.querySelectorAll('[data-act]').forEach(function (b) {
-    b.onclick = function () {
-      var a = b.dataset.act;
-      if (a === 'nuova-materia') nuovaMateria();
-      else if (a === 'carica') mostra('carica', b.dataset.m || (cur.view === 'materia' ? cur.arg : null));
-      else if (a === 'ripasso-oggi') avviaTest({ tipo: 'ripasso', mid: b.dataset.m || null });
-    };
-  });
-}
-function nuovaMateria() {
-  sheet('<h2 style="font-size:22px">Nuova materia</h2><div class="field"><label for="nm">Nome della materia</label><input id="nm" maxlength="80" placeholder="es. Diritto privato" autocomplete="off"></div><button class="btn" id="nm-ok">Aggiungi</button><button class="btn ghost" data-close style="color:var(--blu2)">Annulla</button>', function (r) {
-    var i = r.querySelector('#nm'); setTimeout(function () { i.focus(); }, 100);
-    var ok = function () { var n = i.value.trim(); if (!n) return; S.materie.push({ id: nid('m'), nome: n }); salva(); chiudiSheet(); rerender(); };
-    r.querySelector('#nm-ok').onclick = ok; i.onkeydown = function (e) { if (e.key === 'Enter') ok(); };
-    r.querySelector('[data-close]').onclick = chiudiSheet;
-  });
-}
-
-// ---------- MATERIA ----------
-function vMateria(mid) {
-  var m = materia(mid), v = $('v-materia'); if (!m) return mostra('materie');
-  var st = statMateria(mid), car = carDi(mid), due = daRipassare(mid), h = '<button class="back" data-b>← Materie</button><h2 style="font-size:25px">' + esc(m.nome) + '</h2>';
-  h += '<div class="kpis"><div class="kpi"><b>' + (st.pct === null ? '–' : st.pct + '%') + '</b><span>risposte giuste</span></div><div class="kpi"><b>' + due.length + '</b><span>da ripassare oggi</span></div></div>';
-  h += '<div class="card"><span class="lab">Dispense</span>';
-  if (!car.length) h += '<span class="note" style="font-size:14px">Nessun appunto caricato. Carica un PDF o incolla il testo: ne nasce una dispensa con mappa, fonti e domande.</span>';
-  car.forEach(function (c) { h += '<button class="li" data-c="' + c.id + '"><span><b>' + esc(c.titolo || c.file || 'Appunti') + '</b><br><span class="note">' + statoCar(c) + '</span></span><span>→</span></button>'; });
-  h += '<button class="btn" data-act="carica" data-m="' + mid + '">+ Carica appunti</button></div>';
-  if (domandeMateria(mid).length) h += '<div class="row"><button class="btn v" data-t>Test della materia</button><button class="btn ghost" data-o style="color:var(--blu)">Orale</button></div>';
-  h += '<button class="btn ghost small" data-del style="color:var(--kob);align-self:flex-start">Elimina materia</button>';
-  v.innerHTML = h;
-  v.querySelector('[data-b]').onclick = function () { mostra('materie'); };
-  v.querySelectorAll('[data-c]').forEach(function (b) { b.onclick = function () { apriCar(b.dataset.c); }; });
-  var t = v.querySelector('[data-t]'); if (t) t.onclick = function () { avviaTest({ tipo: 'materia', mid: mid }); };
-  var o = v.querySelector('[data-o]'); if (o) o.onclick = function () { S.ultimaMateria = mid; mostra('orale'); };
-  v.querySelector('[data-del]').onclick = function () {
-    if (!confirm('Eliminare ' + m.nome + ' con le sue dispense?')) return;
-    carDi(mid).forEach(function (c) { api('/api/caricamento?uid=' + S.uid + '&cid=' + c.id, null, 'DELETE').catch(function () {}); try { localStorage.removeItem('ul-d-' + c.id); } catch (e) {} });
-    S.caricamenti = S.caricamenti.filter(function (c) { return c.materiaId !== mid; }); S.materie = S.materie.filter(function (x) { return x.id !== mid; }); salva(); mostra('materie');
-  };
-  azioni(v);
-}
-function statoCar(c) { return c.stato === 'pronta' ? 'Dispensa pronta · ' + giornoIt(c.data) : c.stato === 'argomenti' ? 'Argomenti trovati: manca la dispensa' : c.stato === 'parziale' ? 'Dispensa a metà: tocca per completarla' : 'Appunti caricati: trova gli argomenti'; }
 function giornoIt(d) { return d ? new Date(d).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) : ''; }
-function apriCar(cid) { var c = S.caricamenti.find(function (x) { return x.id === cid; }); if (!c) return; if (c.stato === 'pronta') mostra('dispensa', cid); else mostra('carica', { cid: cid }); }
 
-// ---------- CARICA APPUNTI ----------
-var CAR = null; // caricamento in corso nella schermata
-function vCarica(arg) {
-  var v = $('v-carica');
-  if (arg && arg.cid) { var c = S.caricamenti.find(function (x) { return x.id === arg.cid; }); if (!c) return mostra('materie'); return passiCaricamento(c); }
-  if (!S.materie.length) { mostra('materie'); return nuovaMateria(); }
-  var mid = arg || S.ultimaMateria || S.materie[0].id;
-  CAR = { mid: mid, testo: '', file: '', titolo: '' };
-  var opts = S.materie.map(function (m) { return '<option value="' + m.id + '"' + (m.id === mid ? ' selected' : '') + '>' + esc(m.nome) + '</option>'; }).join('');
-  v.innerHTML = '<button class="back" data-b>← Indietro</button><h2 style="font-size:25px">Nuovi appunti</h2>' +
-    '<div class="card"><div class="field"><label for="c-mat">Materia</label><select id="c-mat">' + opts + '</select></div>' +
-    '<label class="drop" id="c-drop"><input type="file" id="c-file" accept=".pdf,.txt,.md,application/pdf,text/plain">Scegli un PDF o un file di testo</label>' +
-    '<div id="c-letto"></div>' +
-    '<details><summary class="note" style="cursor:pointer;font-size:13.5px">Oppure incolla il testo</summary><textarea class="in" id="c-txt" rows="7" placeholder="Incolla qui i tuoi appunti" style="margin-top:8px"></textarea></details>' +
-    '<div class="field"><label for="c-tit">Titolo (facoltativo)</label><input id="c-tit" maxlength="100" placeholder="es. Lezione 4 · Elasticità"></div>' +
-    '<button class="btn" id="c-go" disabled>Continua</button><span class="note">Gli appunti vengono letti sul telefono e salvati solo nel tuo spazio.</span></div>';
-  v.querySelector('[data-b]').onclick = function () { if (materia(mid)) mostra('materia', mid); else mostra('materie'); };
-  var go = $('c-go'), aggiorna = function () { var t = (CAR.testo || $('c-txt').value).trim(); go.disabled = t.length < 200; };
-  $('c-txt').oninput = function () { CAR.testo = ''; CAR.file = ''; $('c-letto').innerHTML = ''; aggiorna(); };
-  $('c-file').onchange = function (e) {
-    var f = e.target.files[0]; if (!f) return;
-    $('c-letto').innerHTML = '<div class="file"><span class="spin"></span><span>Leggo ' + esc(f.name) + '…</span></div>';
-    leggiFile(f).then(function (r) {
-      CAR.testo = r.testo; CAR.file = f.name;
-      if (!$('c-tit').value) $('c-tit').value = f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 100);
-      var poco = r.testo.trim().length < 200;
-      $('c-letto').innerHTML = '<div class="file"><i>' + (/pdf$/i.test(f.name) ? 'PDF' : 'TXT') + '</i><div><b>' + esc(f.name) + '</b><div class="note">' + (r.pagine ? r.pagine + ' pagine · ' : '') + r.testo.length.toLocaleString('it-IT') + ' caratteri letti</div></div></div>' +
-        (poco ? '<div class="box tr"><span class="t">Testo non trovato</span>Questo PDF sembra una scansione (immagini, non testo). Per ora UniLampo legge solo PDF con testo selezionabile: prova a esportarlo di nuovo o incolla il testo.</div>' : '') +
-        (r.testo.length > (AI.maxCaratteri || 60000) ? '<div class="note">Gli appunti sono lunghi: verranno usati i primi ' + (AI.maxCaratteri || 60000).toLocaleString('it-IT') + ' caratteri. Per il resto fai un secondo caricamento.</div>' : '');
-      aggiorna();
-    }).catch(function () { $('c-letto').innerHTML = '<div class="box tr"><span class="t">Non riesco a leggerlo</span>Prova con un altro file o incolla il testo.</div>'; });
-  };
-  go.onclick = function () {
-    var testo = (CAR.testo || $('c-txt').value).trim(), mid2 = $('c-mat').value, cid = nid('c');
-    go.disabled = true; go.innerHTML = '<span class="spin"></span>';
-    api('/api/caricamento', { uid: S.uid, cid: cid, materia: (materia(mid2) || {}).nome, titolo: $('c-tit').value.trim(), file: CAR.file, testo: testo }).then(function (r) {
-      var c = { id: cid, materiaId: mid2, titolo: $('c-tit').value.trim() || CAR.file || 'Appunti', file: CAR.file, data: new Date().toISOString(), caratteri: r.caratteri, stato: 'nuovo' };
-      S.caricamenti.push(c); S.ultimaMateria = mid2; salva(); passiCaricamento(c);
-    }).catch(function (e) { go.disabled = false; go.textContent = 'Continua'; toast(e && e.error === 'corto' ? 'Gli appunti sono troppo corti.' : 'Non riesco a salvare: controlla la connessione.'); });
-  };
-}
 var pdfjs = null;
 function leggiFile(f) {
   if (!/pdf$/i.test(f.name) && f.type !== 'application/pdf') return f.text().then(function (t) { return { testo: t }; });
@@ -230,131 +361,8 @@ function leggiFile(f) {
     });
   });
 }
-function passiCaricamento(c) {
-  var v = $('v-carica'); cur.arg = { cid: c.id };
-  v.innerHTML = '<button class="back" data-b>← ' + esc((materia(c.materiaId) || {}).nome || 'Indietro') + '</button><h2 style="font-size:24px">' + esc(c.titolo) + '</h2><div id="p-corpo"><div class="card"><span class="spin"></span></div></div>';
-  v.querySelector('[data-b]').onclick = function () { mostra('materia', c.materiaId); };
-  Promise.all([dispCarica(c.id), leggiStato()]).then(function (x) { disegnaPassi(c, x[0]); });
-}
-function disegnaPassi(c, d) {
-  var box = $('p-corpo'); if (!box || !d) { if (box) box.innerHTML = '<div class="empty">Non trovo questo caricamento.</div>'; return; }
-  var h = '';
-  h += '<div class="card"><div class="file"><i>' + (/pdf$/i.test(c.file || '') ? 'PDF' : 'TXT') + '</i><div><b>' + esc(c.file || c.titolo) + '</b><div class="note">' + (d.caratteri || 0).toLocaleString('it-IT') + ' caratteri</div></div></div>';
-  if (!d.argomenti.length) {
-    h += '<span class="lab">1 · Trova gli argomenti</span><span style="font-size:14px">Leggo gli appunti e trovo gli argomenti principali, nell\'ordine in cui li hai scritti.</span>' +
-      notaAI() + '<button class="btn" id="p-arg"' + (AI.accesa ? '' : ' disabled') + '>Trova gli argomenti</button></div>';
-    box.innerHTML = h;
-    var b = $('p-arg'); if (b) b.onclick = function () {
-      b.disabled = true; b.innerHTML = '<span class="spin"></span> Leggo gli appunti…';
-      genera(c.id, 'argomenti').then(function (r) { d.argomenti = r.dato.argomenti; d.titolo = r.dato.titolo; c.stato = 'argomenti'; if (r.dato.titolo && (!c.titolo || c.titolo === c.file || c.titolo === String(c.file || '').replace(/\.[a-z0-9]+$/i, ''))) c.titolo = r.dato.titolo; salva(); dispSalva(c.id, d); var h2 = document.querySelector('#v-carica h2'); if (h2) h2.textContent = c.titolo; disegnaPassi(c, d); })
-        .catch(function (e) { b.disabled = false; b.textContent = 'Trova gli argomenti'; toast(erroreAI(e)); });
-    };
-    return;
-  }
-  h += '<span class="lab">Argomenti trovati (' + d.argomenti.length + ')</span><div class="chips">' + d.argomenti.map(function (a) { return '<span class="chip on">' + esc(a.titolo) + '</span>'; }).join('') + '</div></div>';
-  var n = d.argomenti.length;
-  h += '<div class="card"><span class="lab">2 · Cosa preparo</span><div class="steps">' +
-    '<div><i>1</i><span>Cerco fino a ' + (AI.maxFonti || 3) + ' fonti affidabili per argomento</span></div>' +
-    '<div><i>2</i><span>Scrivo ' + n + (n === 1 ? ' capitolo' : ' capitoli') + ' con riquadri e confronto con le fonti</span></div>' +
-    '<div><i>3</i><span>Mappa a colori</span></div>' +
-    '<div><i>4</i><span>Circa ' + (8 * n) + ' domande a crocette e ' + (2 * n) + ' per l\'orale</span></div></div>' +
-    '<span class="note">Ci vuole circa un minuto. La dispensa resta salvata.</span>' + notaAI() +
-    '<div class="steps" id="p-steps"></div><button class="btn v" id="p-go"' + (AI.accesa ? '' : ' disabled') + '>' + (c.stato === 'parziale' ? 'Completa la dispensa' : 'Genera dispensa') + '</button></div>';
-  box.innerHTML = h;
-  if (c.stato === 'parziale') disegnaSteps(d); // l'avanzamento compare quando la generazione parte
-  var g = $('p-go'); if (g) g.onclick = function () { g.disabled = true; g.innerHTML = '<span class="spin"></span> Sto preparando la dispensa…'; costruisci(c, d).then(function (okTutto) { if (okTutto) { c.stato = 'pronta'; salva(); toast('Dispensa pronta'); mostra('dispensa', c.id); } else { c.stato = 'parziale'; salva(); g.disabled = false; g.textContent = 'Riprova da dove si è fermata'; } }); };
-}
 function notaAI() { return AI.accesa ? '' : '<div class="box tr"><span class="t">In pausa</span>' + PAUSA + '</div>'; }
-function elencoPassi(d) {
-  var o = [];
-  d.argomenti.forEach(function (a, i) { o.push({ passo: 'ricerca', i: i, nome: 'Fonti · ' + a.titolo, fatto: !!d.ricerca[i] }); o.push({ passo: 'capitolo', i: i, nome: 'Capitolo ' + (i + 1) + ' · ' + a.titolo, fatto: !!d.capitoli[i] }); o.push({ passo: 'domande', i: i, nome: 'Domande · ' + a.titolo, fatto: !!d.domande[i] }); });
-  o.push({ passo: 'mappa', i: 0, nome: 'Mappa a colori', fatto: !!d.mappa });
-  return o;
-}
-function disegnaSteps(d, ora, err) {
-  var el = $('p-steps'); if (!el) return;
-  el.innerHTML = elencoPassi(d).map(function (p, k) { var cl = p.fatto ? 'fatto' : k === ora ? (err ? 'err' : 'ora') : ''; return '<div class="' + cl + '"><i>' + (p.fatto ? '✓' : k === ora ? (err ? '!' : '…') : k + 1) + '</i><span>' + esc(p.nome) + '</span></div>'; }).join('');
-}
-function costruisci(c, d) {
-  var lista = elencoPassi(d), k = 0;
-  var prossimo = function () {
-    while (k < lista.length && lista[k].fatto) k++;
-    if (k >= lista.length) return Promise.resolve(true);
-    var p = lista[k]; disegnaSteps(d, k);
-    return genera(c.id, p.passo, { indice: p.i }).then(function (r) {
-      if (p.passo === 'ricerca') d.ricerca[p.i] = r.dato; else if (p.passo === 'capitolo') d.capitoli[p.i] = r.dato; else if (p.passo === 'domande') d.domande[p.i] = r.dato; else d.mappa = r.dato;
-      if (r.fonti) d.fonti = r.fonti;
-      p.fatto = true; dispSalva(c.id, d); k++; return prossimo();
-    }).catch(function (e) { disegnaSteps(d, k, true); toast(erroreAI(e)); return false; });
-  };
-  return prossimo();
-}
 
-// ---------- DISPENSE ----------
-function vDispense() {
-  var v = $('v-dispense'), h = '<h2 style="font-size:25px;margin-top:4px">Dispense</h2>';
-  if (!S.caricamenti.length) h += '<div class="empty"><b>Ancora nessuna dispensa</b><span>Carica gli appunti di una materia: UniLampo trova gli argomenti, cerca fonti affidabili e scrive la dispensa con mappa e domande.</span><button class="btn" data-act="carica">+ Carica appunti</button></div>';
-  S.materie.forEach(function (m) {
-    var car = carDi(m.id); if (!car.length) return;
-    h += '<div class="card"><span class="lab">' + esc(m.nome) + '</span>' + car.map(function (c) { return '<button class="li" data-c="' + c.id + '"><span><b>' + esc(c.titolo) + '</b><br><span class="note">' + statoCar(c) + '</span></span><span>→</span></button>'; }).join('') + '</div>';
-  });
-  v.innerHTML = h;
-  v.querySelectorAll('[data-c]').forEach(function (b) { b.onclick = function () { apriCar(b.dataset.c); }; });
-  azioni(v);
-}
-function vDispensa(cid) {
-  var v = $('v-dispensa'), c = S.caricamenti.find(function (x) { return x.id === cid; }); if (!c) return mostra('dispense');
-  var d = dispLocale(cid);
-  if (!d) { v.innerHTML = '<div class="card"><span class="spin"></span></div>'; dispCarica(cid).then(function (x) { if (x) vDispensa(cid); else v.innerHTML = '<div class="empty">Dispensa non trovata.</div>'; }); return; }
-  var h = '<div class="flex"><button class="back" data-b>← Dispense</button><span class="tag">Salvata</span></div><div><span class="lab">' + esc((materia(c.materiaId) || {}).nome || d.materia) + '</span><h2 style="font-size:24px">' + esc(c.titolo || d.titolo) + '</h2></div>';
-  h += '<div class="paper"><div class="legend"><span><s style="background:var(--y)"></s>concetto chiave</span><span><s style="background:var(--b)"></s>definizione</span><span><s style="background:var(--r)"></s>attenzione</span><span><u style="text-decoration-color:var(--u);text-decoration-thickness:2px">formula</u></span></div>';
-  if (d.mappa && d.mappa.rami && d.mappa.rami.length) {
-    h += '<div class="map"><div class="core">' + esc(d.mappa.centro || c.titolo) + '</div>' + d.mappa.rami.map(function (r, k) {
-      var key = 'r' + k, gia = d.approfondimenti[key];
-      return '<div class="node c' + ((k % 6) + 1) + '"><b>' + esc(r.titolo) + '</b><span>' + esc(r.testo) + '</span><button type="button" class="ap" data-ap="' + key + '" data-cap="' + Math.max(0, r.capitolo - 1) + '" data-txt="' + esc(r.titolo + ': ' + r.testo) + '">' + (gia ? 'Approfondito ✓' : 'Approfondisci ↗') + '</button></div>';
-    }).join('') + '</div>';
-  }
-  var nCap = d.argomenti.length;
-  h += '<span class="lab" style="margin-top:4px">Indice</span><div class="toc">' + d.argomenti.map(function (a, i) { return '<button type="button" data-goto="cap' + i + '"><span class="n" style="font-weight:700;color:var(--blu)">' + (i + 1) + '</span>' + esc((d.capitoli[i] || a).titolo) + '</button>'; }).join('') + '</div></div>';
-  for (var i = 0; i < nCap; i++) {
-    var cp = d.capitoli[i]; if (!cp) continue;
-    h += '<div class="paper c' + ((i % 6) + 1) + '" id="cap' + i + '"><h3><span class="n">' + (i + 1) + '</span>' + esc(cp.titolo) + '</h3>';
-    cp.paragrafi.forEach(function (p, j) {
-      var key = 'c' + i + 'p' + j, ap = d.approfondimenti[key];
-      h += '<p>' + marca(p) + '</p><button type="button" class="apbtn' + (ap ? ' salvato' : '') + '" data-ap="' + key + '" data-cap="' + i + '" data-txt="' + esc(p.replace(/\[\[[gcru]\|([^\]]*)\]\]/g, '$1')) + '">' + (ap ? '✓ Approfondimento salvato' : '✦ Approfondisci') + '</button>';
-      if (ap) h += boxApp(ap);
-    });
-    if (cp.esempio) h += '<div class="box es"><span class="t">Esempio</span>' + marca(cp.esempio) + '</div>';
-    if (cp.trappola) h += '<div class="box tr"><span class="t">Trappola</span>' + marca(cp.trappola) + '</div>';
-    if (cp.ricorda) h += '<div class="box rem"><span class="t">Da ricordare</span>' + marca(cp.ricorda) + '</div>';
-    if (cp.confronto && cp.confronto.length) {
-      h += '<span class="lab">Appunti a confronto con le fonti</span><div class="cmp">' + cp.confronto.map(function (x) {
-        var ic = x.tipo === 'ok' ? '<i class="ic i-ok">✓</i>' : x.tipo === 'incompleto' ? '<i class="ic i-w">!</i>' : '<i class="ic i-no">≠</i>';
-        var pre = x.tipo === 'incompleto' ? '<b>Incompleto:</b> ' : x.tipo === 'diverso' ? '<b>Diverso:</b> ' : '';
-        return '<div>' + ic + '<span>' + pre + marca(x.testo) + '</span></div>';
-      }).join('') + '</div>';
-    }
-    var mie = (d.ricerca[i] && d.ricerca[i].nums) || [];
-    if (mie.length) h += '<div class="srcs"><span class="t">Fonti di questo capitolo</span>' + mie.map(function (n) { var f = (d.fonti || []).find(function (x) { return x.n === n; }); return f ? '<span>[' + n + '] <a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.titolo) + '</a>' + (f.sito ? ' · ' + esc(f.sito) : '') + '</span>' : ''; }).join('') + '</div>';
-    else h += '<div class="srcs"><span class="t">Fonti</span><span>Per questo argomento la ricerca non ha trovato fonti affidabili: il capitolo si basa solo sui tuoi appunti.</span></div>';
-    h += '</div>';
-  }
-  var nq = domandeDi(cid).length;
-  h += '<div class="card"><span class="lab">Tutte le fonti</span><div class="srcs" style="background:none;padding:0">' + ((d.fonti || []).length ? d.fonti.map(function (f) { return '<span id="f' + f.n + '">[' + f.n + '] <a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.titolo) + '</a>' + (f.tipo ? ' · ' + esc(f.tipo) : '') + '</span>'; }).join('') : '<span>Nessuna fonte esterna.</span>') + '</div></div>';
-  h += '<button class="btn" data-ver' + (nq ? '' : ' disabled') + '>Verifica finale · ' + nq + ' domande</button>';
-  h += '<button class="btn ghost small" data-del style="color:var(--kob);align-self:flex-start">Elimina questa dispensa</button>';
-  v.innerHTML = h;
-  v.querySelector('[data-b]').onclick = function () { mostra('dispense'); };
-  v.querySelectorAll('[data-goto]').forEach(function (b) { b.onclick = function () { var e = $(b.dataset.goto); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
-  v.querySelectorAll('[data-ap]').forEach(function (b) { b.onclick = function () { approfondisci(c, d, b.dataset.ap, +b.dataset.cap, b.dataset.txt); }; });
-  v.querySelectorAll('[data-fonte]').forEach(function (b) { b.onclick = function () { mostraFonte(d, +b.dataset.fonte); }; });
-  v.querySelector('[data-ver]').onclick = function () { avviaTest({ tipo: 'verifica', cid: cid }); };
-  v.querySelector('[data-del]').onclick = function () {
-    if (!confirm('Eliminare questa dispensa? Le risposte date restano nelle statistiche.')) return;
-    api('/api/caricamento?uid=' + S.uid + '&cid=' + cid, null, 'DELETE').catch(function () {}); try { localStorage.removeItem('ul-d-' + cid); } catch (e) {}
-    S.caricamenti = S.caricamenti.filter(function (x) { return x.id !== cid; }); salva(); mostra('dispense');
-  };
-}
 function boxApp(ap) {
   return '<div class="box app"><span class="t">Approfondimento · ' + esc(ap.titolo) + '</span>' + ap.paragrafi.map(function (p) { return '<p style="margin:0 0 6px">' + marca(p) + '</p>'; }).join('') +
     ap.esempi.map(function (e) { return '<div class="box es" style="margin-top:6px"><span class="t">Esempio in più</span>' + marca(e) + '</div>'; }).join('') +
@@ -399,6 +407,7 @@ function fontiCitate(d, testo) {
 }
 function legaSheet(r, d) { r.querySelectorAll('[data-close]').forEach(function (b) { b.onclick = chiudiSheet; }); r.querySelectorAll('[data-fonte]').forEach(function (b) { b.onclick = function () { mostraFonte(d, +b.dataset.fonte); }; }); }
 
+
 // ---------- TEST ----------
 var T = null;
 function mescola(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
@@ -410,25 +419,6 @@ function avviaTest(o) {
   if (!pool.length) { toast('Nessuna domanda da fare qui.'); return; }
   T = { o: o, lista: mescola(pool).map(function (x) { var ord = mescola([0, 1, 2, 3]); return { qid: x.qid, cid: x.cid, q: x.q, ord: ord }; }), i: 0, ok: 0, risposto: false, inizio: Date.now() };
   mostra('test', { inCorso: true });
-}
-function vTest(arg) {
-  var v = $('v-test');
-  if (T && arg && arg.inCorso) return disegnaDomanda();
-  T = null;
-  var h = '<h2 style="font-size:25px;margin-top:4px">Test</h2>', due = daRipassare();
-  if (due.length) h += '<button class="banner" data-rip>Ripasso: ' + due.length + ' domande sbagliate da rifare oggi <span>→</span></button>';
-  var conDom = S.materie.filter(function (m) { return domandeMateria(m.id).length; });
-  if (!conDom.length) h += '<div class="empty"><b>Nessuna domanda ancora</b><span>Le domande a crocette nascono con ogni dispensa (8 per argomento) e con ogni approfondimento (3).</span></div>';
-  conDom.forEach(function (m) {
-    var st = statMateria(m.id), car = carDi(m.id).filter(function (c) { return domandeDi(c.id).length; });
-    h += '<div class="card"><div class="flex"><b style="font-size:16px">' + esc(m.nome) + '</b><span class="note">' + domandeMateria(m.id).length + ' domande' + (st.pct !== null ? ' · ' + st.pct + '% giuste' : '') + '</span></div>' +
-      '<button class="btn v" data-m="' + m.id + '">Test della materia · ' + Math.min(15, domandeMateria(m.id).length) + ' domande</button>' +
-      car.map(function (c) { return '<button class="li" data-v="' + c.id + '"><span>Verifica: <b>' + esc(c.titolo) + '</b></span><span class="note">' + domandeDi(c.id).length + ' →</span></button>'; }).join('') + '</div>';
-  });
-  v.innerHTML = h;
-  var r = v.querySelector('[data-rip]'); if (r) r.onclick = function () { avviaTest({ tipo: 'ripasso' }); };
-  v.querySelectorAll('[data-m]').forEach(function (b) { b.onclick = function () { avviaTest({ tipo: 'materia', mid: b.dataset.m }); }; });
-  v.querySelectorAll('[data-v]').forEach(function (b) { b.onclick = function () { avviaTest({ tipo: 'verifica', cid: b.dataset.v }); }; });
 }
 function disegnaDomanda() {
   var v = $('v-test'), x = T.lista[T.i];
@@ -456,10 +446,11 @@ function disegnaDomanda() {
 function fineTest() {
   var v = $('v-test'), n = T.lista.length, pct = Math.round(T.ok / n * 100);
   v.innerHTML = '<div class="card" style="align-items:flex-start"><span class="lab">Risultato</span><div class="score">' + T.ok + '<span style="font-size:22px">/' + n + '</span></div><span>' + pct + '% di risposte giuste. ' + (n - T.ok ? (n - T.ok === 1 ? 'La sbagliata è già nel ripasso.' : 'Le ' + (n - T.ok) + ' sbagliate sono già nel ripasso.') : 'Nessun errore: queste domande torneranno tra qualche giorno per fissarle.') + '</span>' +
-    '<div class="row" style="width:100%"><button class="btn v" id="t-ancora">Rifai un test</button><button class="btn ghost" id="t-rip" style="color:var(--blu)">Ripasso</button></div></div>';
+    '<div class="row" style="width:100%"><button class="btn v" id="t-ancora">Rifai un test</button><button class="btn ghost" id="t-rip" style="color:var(--blu)">Torna ai test</button></div></div>';
   $('t-ancora').onclick = function () { var o = T.o; avviaTest(o.tipo === 'ripasso' ? { tipo: 'materia', mid: S.materie[0] && S.materie[0].id } : o); };
-  $('t-rip').onclick = function () { T = null; mostra('ripasso'); };
+  $('t-rip').onclick = function () { T = null; mostra('test'); };
 }
+
 
 // ---------- ORALE ----------
 var SR = window.SpeechRecognition || window.webkitSpeechRecognition || null, O = null;
@@ -470,21 +461,6 @@ function vocePiuBella() {
 }
 if ('speechSynthesis' in window) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = function () {}; }
 function parla(t) { return new Promise(function (res) { if (!('speechSynthesis' in window)) return res(); try { var u = new SpeechSynthesisUtterance(t); u.lang = 'it-IT'; u.rate = 0.98; var vv = vocePiuBella(); if (vv) u.voice = vv; u.onend = res; u.onerror = res; speechSynthesis.cancel(); speechSynthesis.speak(u); setTimeout(res, Math.min(30000, 2500 + t.length * 90)); } catch (e) { res(); } }); }
-function vOrale() {
-  var v = $('v-orale'), conOr = S.materie.filter(function (m) { return oraliMateria(m.id).length; });
-  if (!conOr.length) { v.innerHTML = '<h2 style="font-size:25px;margin-top:4px">Orale</h2><div class="empty"><b>Nessuna domanda d\'orale ancora</b><span>Ogni dispensa prepara 2 domande d\'orale per argomento, con i punti chiave che la commissione controlla.</span></div>'; return; }
-  var mid = conOr.some(function (m) { return m.id === S.ultimaMateria; }) ? S.ultimaMateria : conOr[0].id;
-  var dom = oraliMateria(mid), ult = S.orali.filter(function (o) { return o.mid === mid; }).slice(-3).reverse();
-  var h = '<div class="flex"><h2 style="font-size:25px;margin-top:4px">Orale</h2></div><div class="chips">' + conOr.map(function (m) { return '<button class="chip' + (m.id === mid ? ' on' : '') + '" data-m="' + m.id + '">' + esc(m.nome) + '</button>'; }).join('') + '</div>' +
-    '<div class="comm"><div class="mem" id="m0"><div class="av">P</div>Presidente</div><div class="mem" id="m1"><div class="av">C1</div>Commissario</div><div class="mem" id="m2"><div class="av">C2</div>Assistente</div></div>' +
-    '<div class="card" id="o-box"><span class="lab">Come funziona</span><span style="font-size:14px">La commissione ti fa una domanda a voce e può farti fino a due domande di approfondimento. Rispondi parlando. Alla fine il voto e i punti toccati li decide il sistema, non tu.</span>' +
-    notaAI() +
-    '<button class="btn" id="o-go"' + (AI.accesa ? '' : ' disabled') + '>Inizia l\'orale · domanda a caso</button><span class="note">' + dom.length + ' domande disponibili in questa materia.' + (SR ? '' : ' Su questo browser il riconoscimento vocale non c\'è: risponderai scrivendo, anche con il microfono della tastiera.') + '</span></div>';
-  if (ult.length) h += '<div class="card"><span class="lab">Ultimi orali</span>' + ult.map(function (o) { return '<div class="li"><span>' + esc(o.domanda.slice(0, 70)) + (o.domanda.length > 70 ? '…' : '') + '<br><span class="note">' + giornoIt(o.data) + '</span></span><b>' + (o.voto >= 18 ? o.voto + (o.lode ? 'L' : '') + '/30' : 'Non sup.') + '</b></div>'; }).join('') + '</div>';
-  v.innerHTML = h;
-  v.querySelectorAll('[data-m]').forEach(function (b) { b.onclick = function () { S.ultimaMateria = b.dataset.m; salva(); vOrale(); }; });
-  var g = $('o-go'); if (g) g.onclick = function () { iniziaOrale(mid, dom[Math.floor(Math.random() * dom.length)]); };
-}
 function waveOn(on) { var w = document.querySelector('#o-box .wave'); if (!w) return; clearInterval(waveOn.t); if (on) waveOn.t = setInterval(function () { w.querySelectorAll('i').forEach(function (i) { i.style.height = (6 + Math.random() * 28) + 'px'; }); }, 140); else w.querySelectorAll('i').forEach(function (i) { i.style.height = '6px'; }); }
 function chiParla(k) { [0, 1, 2].forEach(function (i) { var m = $('m' + i); if (m) m.classList.toggle('talk', i === k); }); }
 function iniziaOrale(mid, q) {
@@ -540,61 +516,58 @@ function esitoOrale(x) {
 }
 function fermaOrale() { if (!O) return; O.on = false; try { if (O.rec) O.rec.abort(); } catch (e) {} try { speechSynthesis.cancel(); } catch (e) {} waveOn(false); O = null; }
 
-// ---------- RIPASSO ----------
-function vRipasso() {
-  var v = $('v-ripasso'), due = daRipassare(), deb = argomentiDeboli(), h = '<h2 style="font-size:25px;margin-top:4px">Ripasso</h2>';
-  h += '<div class="kpis"><div class="kpi"><b>' + due.length + '</b><span>sbagliate da ripassare oggi</span></div><div class="kpi"><b>' + inArrivo() + '</b><span>tornano nei prossimi giorni</span></div></div>';
-  if (due.length) h += '<button class="btn" data-rip>Ripassa ora · ' + due.length + ' domande</button>';
-  h += '<div class="card"><span class="lab">Argomenti deboli</span>';
-  if (!deb.length) h += '<span class="note" style="font-size:14px">Rispondi ad almeno 3 domande per argomento e qui vedrai dove sbagli di più.</span>';
-  deb.slice(0, 5).forEach(function (x) { var c = S.caricamenti.find(function (k) { return k.id === x.cid; }) || {}; h += '<button class="li" data-cap="' + x.cid + ':' + x.cap + '"><span><b>' + esc(titoloCap(x.cid, x.cap)) + '</b><br><span class="note">' + esc((materia(c.materiaId) || {}).nome || '') + ' · ' + x.ko + ' errori su ' + (x.ok + x.ko) + '</span></span><span class="tag ' + (x.pct < 60 ? 'red">Ripassa' : 'grey">Quasi ok') + '</span></button>'; });
-  h += '</div>';
-  // collegamenti tra argomenti, materia per materia
-  S.materie.forEach(function (m) {
-    var nodi = [], archi = [];
-    carDi(m.id).forEach(function (c) { var d = dispLocale(c.id); if (!d) return; d.argomenti.forEach(function (a, i) { var cp = d.capitoli[i]; nodi.push({ id: c.id + ':' + i, t: (cp || a).titolo, coll: cp ? cp.collegati : [] }); }); });
-    if (nodi.length < 2) return;
-    var norm = function (s) { return String(s).toLowerCase().replace(/[^a-zà-ù0-9 ]/g, '').trim(); };
-    nodi.forEach(function (n, i) { (n.coll || []).forEach(function (t) { var j = nodi.findIndex(function (x) { return norm(x.t) === norm(t) || norm(x.t).indexOf(norm(t)) >= 0 || norm(t).indexOf(norm(x.t)) >= 0; }); if (j >= 0 && j !== i && !archi.some(function (a) { return (a[0] === i && a[1] === j) || (a[0] === j && a[1] === i); })) archi.push([i, j]); }); });
-    if (!archi.length) return;
-    var deboli = deb.filter(function (x) { return x.pct < 60; }).map(function (x) { return x.cid + ':' + x.cap; });
-    var N = Math.min(nodi.length, 10), W = 330, H = 230, cx = W / 2, cy = H / 2, rx = 100, ry = 80;
-    var pos = nodi.slice(0, N).map(function (n, i) { var a = -Math.PI / 2 + i * 2 * Math.PI / N; return [cx + rx * Math.cos(a), cy + ry * Math.sin(a)]; });
-    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%"><g stroke="#9DB4D3" stroke-width="1.5">' + archi.filter(function (a) { return a[0] < N && a[1] < N; }).map(function (a) { return '<line x1="' + pos[a[0]][0] + '" y1="' + pos[a[0]][1] + '" x2="' + pos[a[1]][0] + '" y2="' + pos[a[1]][1] + '"/>'; }).join('') + '</g>' +
-      nodi.slice(0, N).map(function (n, i) { var t = n.t.length > 24 ? n.t.slice(0, 23) + '…' : n.t, w = Math.max(60, t.length * 5.4 + 16), deb1 = deboli.indexOf(n.id) >= 0; return '<g font-family="Inter" font-size="10" font-weight="600" text-anchor="middle"><rect x="' + (pos[i][0] - w / 2) + '" y="' + (pos[i][1] - 12) + '" width="' + w + '" height="24" rx="12" fill="' + (deb1 ? '#ffd2cc' : '#e3f0ff') + '" stroke="' + (deb1 ? '#ff8a7e' : '#6aa5ff') + '"/><text x="' + pos[i][0] + '" y="' + (pos[i][1] + 3.5) + '" fill="#0F2350">' + esc(t) + '</text></g>'; }).join('') + '</svg>';
-    h += '<div class="card"><span class="lab">Collegamenti · ' + esc(m.nome) + '</span>' + svg + '<span class="note">' + (deboli.length ? 'In rosa gli argomenti deboli: ripassarli aiuta anche quelli collegati.' : 'Gli argomenti collegati tra loro nelle tue dispense.') + '</span></div>';
-  });
-  var pross = prossimoPasso(due, deb);
-  if (pross) h += '<button class="banner" data-pross>' + esc(pross.t) + '<span>→</span></button>';
-  v.innerHTML = h;
-  var r = v.querySelector('[data-rip]'); if (r) r.onclick = function () { avviaTest({ tipo: 'ripasso' }); };
-  v.querySelectorAll('[data-cap]').forEach(function (b) { b.onclick = function () { var p = b.dataset.cap.split(':'); mostra('dispensa', p[0]); setTimeout(function () { var e = $('cap' + p[1]); if (e) e.scrollIntoView({ block: 'start' }); }, 60); }; });
-  var p = v.querySelector('[data-pross]'); if (p) p.onclick = pross.fn;
-}
-function prossimoPasso(due, deb) {
-  if (due.length) return { t: 'Prossimo passo: ripassa le ' + due.length + ' sbagliate', fn: function () { avviaTest({ tipo: 'ripasso' }); } };
-  var w = deb.find(function (x) { return x.pct < 60; });
-  if (w) { var c = S.caricamenti.find(function (k) { return k.id === w.cid; }) || {}; return { t: 'Prossimo passo: rileggi “' + titoloCap(w.cid, w.cap) + '” e rifai la verifica', fn: function () { mostra('dispensa', w.cid); } }; }
-  var m = S.materie.find(function (x) { return domandeMateria(x.id).length && oraliMateria(x.id).length; });
-  if (m) return { t: 'Prossimo passo: prova l\'orale di ' + m.nome, fn: function () { S.ultimaMateria = m.id; mostra('orale'); } };
-  return null;
-}
 
-// ---------- IMPOSTAZIONI ----------
-function vSet() {
-  var v = $('v-set');
-  v.innerHTML = '<button class="back" data-b>← Materie</button><h2 style="font-size:25px">Impostazioni</h2>' +
-    '<div class="card"><span class="lab">Il tuo codice</span><span style="font-size:14px">Con questo codice ritrovi materie, dispense e progressi su un altro telefono.</span><b style="font-family:\'Bricolage Grotesque\';font-size:20px;letter-spacing:.02em;user-select:all">' + esc(S.uid) + '</b>' +
-    '<div class="field"><label for="s-cod">Usa un altro codice</label><input id="s-cod" placeholder="u…" autocomplete="off" autocapitalize="off"></div><button class="btn ghost small" id="s-usa" style="color:var(--blu);align-self:flex-start">Passa a questo codice</button></div>';
-  v.querySelector('[data-b]').onclick = function () { mostra('materie'); };
-  $('s-usa').onclick = function () {
-    var c = $('s-cod').value.trim().toLowerCase(); if (!/^u[a-z0-9]{8,30}$/.test(c)) return toast('Codice non valido.');
-    api('/api/dati?uid=' + c).then(function (r) { if (!r.data) return toast('Nessun dato con questo codice.'); S = r.data; S.uid = c; try { localStorage.setItem('unilampo', JSON.stringify(S)); } catch (e) {} toast('Fatto: dati caricati'); mostra('materie'); }).catch(function () { toast('Non riesco a controllare il codice.'); });
-  };
+function vTest(arg) {
+  var v = $('v-test');
+  if (T && arg && arg.inCorso) return disegnaDomanda();
+  T = null;
+  var m = materiaCorrente(), h = '<h1 class="h1">Test</h1>', dueTutte = daRipassare();
+  if (dueTutte.length) h += '<button class="giallo" data-rip><span>Rifai le ' + dueTutte.length + (dueTutte.length === 1 ? ' domanda sbagliata' : ' domande sbagliate') + '</span><span class="fr">→</span></button>';
+  if (!m) { v.innerHTML = h + '<div class="empty"><b>Nessuna materia</b><span>Aggiungi una materia e carica gli appunti dalla sezione Studia.</span></div>'; return; }
+  h += barraMaterie(false);
+  var nq = domandeMateria(m.id).length, st = statMateria(m.id), deb = argomentiDeboli().filter(function (x) { var c = S.caricamenti.find(function (k) { return k.id === x.cid; }); return c && c.materiaId === m.id && x.pct < 85; });
+  if (!nq) h += '<div class="empty"><b>Ancora nessuna domanda per ' + esc(m.nome) + '</b><span>Le domande nascono con ogni dispensa: circa 8 per argomento, più 3 per ogni approfondimento.</span></div>';
+  else {
+    h += '<div class="hero"><span class="lab">' + esc(m.nome) + '</span><h2>' + (st.pct === null ? 'Mettiti alla prova' : st.pct + '% giuste') + '</h2><span style="color:#D6E6F5;font-size:14px">' + nq + ' domande dalle tue dispense e dagli approfondimenti. Dopo ogni risposta trovi la spiegazione.</span><button class="btn" data-go>Inizia il test · ' + Math.min(15, nq) + ' domande</button></div>';
+    if (deb.length) h += '<div class="sez">Da rinforzare</div><div class="card" style="gap:8px">' + deb.slice(0, 4).map(function (x) { return '<button class="li" data-cap="' + x.cid + ':' + x.cap + '"><span><b>' + esc(titoloCap(x.cid, x.cap)) + '</b><br><span class="note">' + x.ko + ' errori su ' + (x.ok + x.ko) + ' · tocca per rileggere</span></span><span class="tag ' + (x.pct < 60 ? 'red' : 'grey') + '">' + x.pct + '%</span></button>'; }).join('') + '</div>';
+    var car = carDi(m.id).filter(function (c) { return domandeDi(c.id).length; });
+    if (car.length > 1) h += '<div class="sez">Per dispensa</div><div class="card" style="gap:8px">' + car.map(function (c) { return '<button class="li" data-v="' + c.id + '"><span><b>' + esc(c.titolo) + '</b></span><span class="note">' + domandeDi(c.id).length + ' →</span></button>'; }).join('') + '</div>';
+  }
+  v.innerHTML = h;
+  legaMaterie(v);
+  var r = v.querySelector('[data-rip]'); if (r) r.onclick = function () { avviaTest({ tipo: 'ripasso' }); };
+  var g = v.querySelector('[data-go]'); if (g) g.onclick = function () { avviaTest({ tipo: 'materia', mid: m.id }); };
+  v.querySelectorAll('[data-v]').forEach(function (b) { b.onclick = function () { avviaTest({ tipo: 'verifica', cid: b.dataset.v }); }; });
+  v.querySelectorAll('[data-cap]').forEach(function (b) { b.onclick = function () { var p = b.dataset.cap.split(':'); mostra('dispensa', p[0]); setTimeout(function () { var e = $('cap' + p[1]); if (e) e.scrollIntoView({ block: 'start' }); }, 60); }; });
+}
+function vOrale() {
+  var v = $('v-orale'), m = materiaCorrente(), h = '<h1 class="h1">Orale</h1>';
+  if (!m) { v.innerHTML = h + '<div class="empty"><b>Nessuna materia</b><span>Aggiungi una materia e carica gli appunti dalla sezione Studia.</span></div>'; return; }
+  var dom = oraliMateria(m.id), ult = S.orali.filter(function (o) { return o.mid === m.id; }).slice(-3).reverse();
+  if (S.oraleCid) { var solo = dom.filter(function (x) { return x.cid === S.oraleCid; }); if (solo.length) dom = solo; }
+  h += barraMaterie(false) + '<div class="comm"><div class="mem" id="m0"><div class="av">P</div>Presidente</div><div class="mem" id="m1"><div class="av">C1</div>Commissario</div><div class="mem" id="m2"><div class="av">C2</div>Assistente</div></div>';
+  if (!dom.length) h += '<div class="empty"><b>Ancora nessuna domanda d\'orale per ' + esc(m.nome) + '</b><span>Ogni dispensa prepara 2 domande d\'orale per argomento, con i punti che la commissione controlla.</span></div>';
+  else {
+    var c = S.oraleCid && S.caricamenti.find(function (k) { return k.id === S.oraleCid; });
+    h += '<div class="card" id="o-box" style="align-items:center;text-align:center;gap:12px;padding:24px 16px"><button class="mic" id="o-go" aria-label="Inizia l\'orale"' + (AI.accesa ? '' : ' disabled') + '><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>' +
+      '<b style="font-family:\'Bricolage Grotesque\';font-size:22px">Inizia l\'orale</b><span class="note" style="font-size:14px">Una domanda a caso su ' + esc(c ? c.titolo : m.nome) + '. Rispondi a voce: il voto lo decide la commissione.</span>' +
+      (c ? '<button class="linkap" id="o-tutte">usa tutta la materia</button>' : '') + notaAI() + (SR ? '' : '<span class="note">Qui il riconoscimento vocale non c\'è: risponderai scrivendo, anche con il microfono della tastiera.</span>') + '</div>';
+  }
+  if (ult.length) h += '<div class="sez">Ultimi orali</div><div class="card" style="gap:8px">' + ult.map(function (o) { return '<div class="li"><span>' + esc(o.domanda.slice(0, 70)) + (o.domanda.length > 70 ? '…' : '') + '<br><span class="note">' + giornoIt(o.data) + '</span></span><b>' + (o.voto >= 18 ? o.voto + (o.lode ? 'L' : '') + '/30' : 'Non sup.') + '</b></div>'; }).join('') + '</div>';
+  v.innerHTML = h;
+  v.querySelectorAll('[data-mat]').forEach(function (b) { b.onclick = function () { S.ultimaMateria = b.dataset.mat; S.oraleCid = null; salva(); vOrale(); }; });
+  var t = $('o-tutte'); if (t) t.onclick = function () { S.oraleCid = null; salva(); vOrale(); };
+  var g = $('o-go'); if (g) g.onclick = function () { $('o-box').style.cssText = ''; iniziaOrale(m.id, dom[Math.floor(Math.random() * dom.length)]); };
 }
 
 // ---------- avvio ----------
-leggiStato().then(function () { if (cur.view === 'materie') vMaterie(); });
+leggiStato().then(function () { rerender(); });
 // Al rientro nell'app ricarica in silenzio le dispense dal server (servono a test, orale e ripasso).
-S.caricamenti.forEach(function (c) { if (!dispLocale(c.id)) dispCarica(c.id); });
-mostra('materie');
+S.caricamenti.forEach(function (c) {
+  dispCarica(c.id).then(function (d) {
+    var L = d && d.lavoro;
+    if (c.stato !== 'pronta' && L && (L.fine || (!L.errore && Date.now() - (L.agg || 0) < 5 * 60000))) segui(c); // lavoro sul server: lo seguo
+    if (cur.view !== 'orale' && !T) rerender();
+  });
+});
+mostra('studia');

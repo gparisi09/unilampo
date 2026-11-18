@@ -155,6 +155,46 @@ body.kb nav.tabs{display:none}
 .hide{display:none!important}
 .spin{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--cel3);border-top-color:var(--blu);animation:sp 1s linear infinite;display:inline-block;vertical-align:middle}
 @keyframes sp{to{transform:rotate(360deg)}}
+
+/* layout grande, più contrasto */
+.h1{font-family:'Bricolage Grotesque';font-weight:800;font-size:32px;line-height:1.02;letter-spacing:-.03em;margin:6px 0 2px;color:var(--navy)}
+.mat{display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.mat::-webkit-scrollbar{display:none}
+.mat button{flex:none;white-space:nowrap;border:2px solid var(--navy);background:#fff;color:var(--navy);border-radius:999px;padding:10px 16px;font-size:15px;font-weight:700;min-height:44px}
+.mat button.on{background:var(--navy);color:#fff}
+.mat button.add{border-style:dashed;color:var(--blu);border-color:var(--blu)}
+.hero{background:var(--navy);color:#fff;border-radius:26px;padding:20px 18px;display:flex;flex-direction:column;gap:14px;box-shadow:0 14px 30px rgba(15,35,80,.22)}
+.hero .lab{color:var(--cel)}
+.hero h2{font-size:31px;line-height:1.02;color:#fff;letter-spacing:-.03em;display:flex;align-items:center;gap:10px}
+.hero .ed{background:rgba(255,255,255,.12);border:0;color:#fff;width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.hero .ed svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.stat{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat div{background:rgba(255,255,255,.09);border-radius:16px;padding:11px 10px;display:flex;flex-direction:column;gap:2px}
+.stat b{font-family:'Bricolage Grotesque';font-size:27px;line-height:1;color:var(--cel)}
+.stat span{font-size:12px;color:#D6E6F5}
+.hero .btn{background:#fff;color:var(--navy)}
+.up{display:flex;align-items:center;gap:14px;background:var(--blu);color:#fff;border-radius:24px;padding:18px;border:0;text-align:left;width:100%;cursor:pointer;box-shadow:0 12px 26px rgba(30,79,216,.28)}
+.up .plus{width:52px;height:52px;border-radius:16px;background:#fff;color:var(--blu);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;flex:none;line-height:1}
+.up b{font-family:'Bricolage Grotesque';font-size:21px;display:block;line-height:1.1}
+.up span{font-size:13px;color:#DCE8FF}
+.up input{display:none}
+.giallo{background:#FFE15C;color:var(--navy);border-radius:20px;padding:15px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-weight:700;font-size:15.5px;border:0;text-align:left;width:100%}
+.giallo .fr{width:36px;height:36px;border-radius:50%;background:var(--navy);color:#FFE15C;display:flex;align-items:center;justify-content:center;flex:none;font-size:18px}
+.sez{font-family:'Bricolage Grotesque';font-weight:800;font-size:20px;color:var(--navy);margin:6px 0 -2px;display:flex;justify-content:space-between;align-items:baseline}
+.sez small{font-family:Inter;font-weight:600;font-size:12.5px;color:var(--muto)}
+.dc{background:#fff;border-radius:22px;padding:16px;display:flex;flex-direction:column;gap:11px;border:2px solid transparent}
+.dc.lav{border-color:var(--blu)}
+.dc .tt{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;background:none;border:0;padding:0;text-align:left;width:100%;color:var(--ink)}
+.dc h3{font-size:19px;line-height:1.15;color:var(--navy)}
+.dc .go{width:34px;height:34px;border-radius:50%;background:var(--bg);color:var(--blu);display:flex;align-items:center;justify-content:center;flex:none;font-size:18px;font-weight:700}
+.dc .row .btn{min-height:44px}
+.foot{display:flex;flex-direction:column;gap:6px;align-items:center;font-size:12.5px;color:var(--muto);margin-top:10px;text-align:center}
+.foot button{background:none;border:0;color:var(--blu2);font-weight:600;font-size:12.5px;text-decoration:underline;text-underline-offset:2px}
+.linkap{background:none;border:0;color:var(--blu);font-weight:700;font-size:13px;padding:2px 0;white-space:nowrap}
+.linkap.salvato{color:var(--okt)}
+.attesa{display:flex;gap:9px;align-items:center;color:var(--muto);font-size:14px}
+nav.tabs{grid-template-columns:repeat(3,1fr)}
+nav.tabs button{font-size:12px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -162,29 +202,22 @@ body.kb nav.tabs{display:none}
 <div class="app">
   <header class="top">
     <button class="logo" id="go-home" type="button">UniLampo</button>
-    <div class="topr"><span class="badge">Beta</span><button class="gear" id="go-set" type="button" aria-label="Impostazioni"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></div>
+    <span class="badge">Beta</span>
   </header>
 
-  <main class="view" id="v-materie"></main>
-  <main class="view" id="v-materia"></main>
-  <main class="view" id="v-carica"></main>
-  <main class="view" id="v-dispense"></main>
+  <main class="view" id="v-studia"></main>
   <main class="view" id="v-dispensa"></main>
   <main class="view" id="v-test"></main>
   <main class="view" id="v-orale"></main>
-  <main class="view" id="v-ripasso"></main>
-  <main class="view" id="v-set"></main>
 </div>
 
 <div class="sheetw" id="sheet"><div class="dim" data-close></div><div class="sheet" role="dialog" aria-modal="true" id="sheet-in"></div></div>
 <div class="toast" id="toast" role="status"></div>
 
 <nav class="tabs" aria-label="Sezioni">
-  <button type="button" data-tab="materie"><svg viewBox="0 0 24 24"><path d="M4 5h6v14H4zM14 5h6v14h-6z"/></svg>Materie</button>
-  <button type="button" data-tab="dispense"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg>Dispense</button>
+  <button type="button" data-tab="studia"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg>Studia</button>
   <button type="button" data-tab="test"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>Test</button>
   <button type="button" data-tab="orale"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>Orale</button>
-  <button type="button" data-tab="ripasso"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg>Ripasso</button>
 </nav>
 <script src="/app.js"></script>
 </body>
