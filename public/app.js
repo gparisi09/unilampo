@@ -5,8 +5,11 @@ function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function
 // Segni della dispensa: [[g|..]] giallo, [[c|..]] celeste, [[r|..]] rosa, [[u|..]] sottolineato, [n] fonte.
 function marca(t) {
   return esc(t).replace(/\[\[([gcru])\|([^\]]{1,300})\]\]/g, function (m, k, x) { return '<span class="' + { g: 'hl', c: 'hb', r: 'hr', u: 'ul' }[k] + '">' + x + '</span>'; })
-    .replace(/\[(\d{1,2})\]/g, '<button type="button" class="cit" data-fonte="$1">[$1]</button>');
+    .replace(/\[p\.\s?(\d{1,4})(?:\s?[-–]\s?(\d{1,4}))?\]/g, function (m, a, b) { return '<button type="button" class="pag" data-pag="' + a + '">' + (FONTI_VIS.tipo === 'parte' ? 'parte ' : 'p. ') + a + (b ? '–' + b : '') + '</button>'; })
+    .replace(/\[(\d{1,2})\]/g, function (m, n) { var f = (FONTI_VIS.fonti || []).find(function (x) { return x.n === +n; }); return '<button type="button" class="cit" data-fonte="' + n + '">' + (f ? esc(nomeSito(f)) : '[' + n + ']') + '</button>'; });
 }
+var FONTI_VIS = {};
+function nomeSito(f) { var x = f.sito || String(f.url || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0]; return x.length > 22 ? x.slice(0, 21) + '…' : x; }
 function toast(t) { var e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(function () { e.classList.remove('on'); }, 2600); }
 function nid(p) { return (p || '') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function giorno(d) { var x = d ? new Date(d) : new Date(); return x.toLocaleDateString('sv-SE'); }
@@ -45,7 +48,8 @@ function genera(cid, passo, extra) { var c = S.caricamenti.find(function (x) { r
 var PAUSA = 'Il generatore è in pausa: le dispense già pronte, i test e il ripasso funzionano. Riprova più tardi.';
 function erroreAI(e) {
   if (e && (e.error === 'spenta' || e.error === 'tetto')) return PAUSA;
-  return 'Il generatore non risponde: riprova tra poco.';
+  if (e && e.error === 'incompleta') return 'Non ho finito: mancano alcune parti. Premi «Riprendi» e completo solo quelle.';
+  return 'Si è interrotto a metà: premi «Riprendi» e continuo da dove mi sono fermato.';
 }
 
 
@@ -150,7 +154,7 @@ function cartaDispensa(c) {
   var j = JOBS[c.id], d = dispLocale(c.id), nCap = d ? Object.keys(d.capitoli || {}).length : 0, nArg = d ? d.argomenti.length : 0;
   if (c.stato === 'pronta') {
     var nq = domandeDi(c.id).length, p = partiDi(c), et = etichettaParti(p), nRami = d && d.mappa ? d.mappa.rami.length : 0;
-    var info = p.dispensa ? nCap + (nCap === 1 ? ' capitolo' : ' capitoli') + ' · ' + nq + ' domande · ' + giornoIt(c.data) : [nq ? nq + ' domande' : '', nRami ? 'mappa: ' + nRami + ' rami' : ''].filter(Boolean).join(' · ');
+    var info = p.dispensa ? nCap + (nCap === 1 ? ' capitolo' : ' capitoli') + (d && d.pagine ? ' da ' + d.pagine + (d.tipoPagine === 'parte' ? ' parti' : ' pagine') : '') + ' · ' + nq + ' domande' : [nq ? nq + ' domande' : '', nRami ? 'mappa: ' + nRami + ' rami' : ''].filter(Boolean).join(' · ');
     var agg = p.dispensa ? '' : '<div class="row" style="gap:14px">' + (!p.test ? '<button class="linkap" data-agg="' + c.id + ':test">+ Aggiungi il test</button>' : '') + (!p.mappa ? '<button class="linkap" data-agg="' + c.id + ':mappa">+ Aggiungi la mappa</button>' : '') + '<button class="linkap" data-agg="' + c.id + ':dispensa" style="color:var(--blu2)">crea la dispensa completa</button></div>';
     return '<div class="dc"><button class="tt" data-apri="' + c.id + '"><span><h3>' + esc(c.titolo) + '</h3><span class="note">' + (et ? '<span class="tag grey" style="margin-right:6px">' + et + '</span>' : '') + info + '</span></span><span class="go">›</span></button>' +
       (nq ? '<div class="row"><button class="btn v small" data-test="' + c.id + '">Test</button><button class="btn ghost small" data-orale="' + c.id + '" style="color:var(--blu)">Orale</button></div>' : '') + agg + '</div>';
@@ -200,7 +204,7 @@ function incolla(m) {
 function caricaFile(m, f) {
   toast('Leggo ' + f.name + '…');
   leggiFile(f).then(function (r) {
-    if (r.testo.trim().length < 200) { sheet('<h2 style="font-size:21px">Testo non trovato</h2><span style="font-size:14.5px">Questo PDF sembra una scansione (immagini, non testo). Per ora UniLampo legge solo PDF con testo selezionabile: prova a esportarlo di nuovo, oppure incolla il testo.</span><button class="btn" data-close>Ho capito</button>', function (x) { x.querySelector('[data-close]').onclick = chiudiSheet; }); return; }
+    if (r.testo.replace(/\[\[PAGINA \d+\]\]/g, '').trim().length < 200) { sheet('<h2 style="font-size:21px">Testo non trovato</h2><span style="font-size:14.5px">Questo PDF sembra una scansione (immagini, non testo). Per ora UniLampo legge solo PDF con testo selezionabile: prova a esportarlo di nuovo, oppure incolla il testo.</span><button class="btn" data-close>Ho capito</button>', function (x) { x.querySelector('[data-close]').onclick = chiudiSheet; }); return; }
     scegliParti(f.name + (r.pagine ? ' · ' + r.pagine + (r.pagine === 1 ? ' pagina' : ' pagine') : ''), function (p) { nuovoCaricamento(m, r.testo, f.name, f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 100), p); });
   }).catch(function () { toast('Non riesco a leggere il file.'); });
 }
@@ -211,7 +215,7 @@ function nuovoCaricamento(m, testo, file, titolo, parti) {
   api('/api/caricamento', { uid: S.uid, cid: cid, materia: m.nome, titolo: titolo, file: file, testo: testo, parti: parti }).then(function (r) {
     var c = { id: cid, materiaId: m.id, titolo: titolo, file: file, data: new Date().toISOString(), caratteri: r.caratteri, stato: 'nuovo', parti: parti };
     S.caricamenti.push(c); salva();
-    if (r.tagliato) toast('Appunti lunghi: uso la prima parte. Per il resto fai un altro caricamento.');
+    if (r.tagliato) sheet('<h2 style="font-size:21px">File molto lungo</h2><span style="font-size:14.5px">Leggo le pagine da 1 a ' + r.pagine + ' su ' + r.pagineTotali + '. Per le pagine da ' + (r.pagine + 1) + ' in poi carica un secondo file: così ogni pagina finisce nella dispensa, senza tagli.</span><button class="btn" data-close>Ho capito</button>', function (x) { x.querySelector('[data-close]').onclick = chiudiSheet; });
     if (AI.accesa) prepara(c); else rerender();
   }).catch(function (e) { toast(e && e.error === 'corto' ? 'Il testo è troppo corto.' : 'Non riesco a salvare: controlla la connessione.'); });
 }
@@ -344,23 +348,48 @@ function lineeMappa(map) {
   if (!lineeMappa.su) { lineeMappa.su = true; window.addEventListener('resize', function () { var m = document.querySelector('#v-dispensa .map'); if (m) lineeMappa(m); }); }
 }
 
+// Quanto del file è entrato nella dispensa: lo dice sempre, anche quando non ha finito.
+function copertura(c, d, j) {
+  if (!d.pagine) return '';
+  var P = partiDi(c), n = d.argomenti.length, fatti = P.dispensa ? Object.keys(d.capitoli).length : Object.keys(d.domande).length, cosa = P.dispensa ? 'capitoli' : 'gruppi di domande';
+  var unita = d.tipoPagine === 'parte' ? 'parti' : 'pagine', h = '';
+  if (d.tagliato) h += '<div class="cop ko"><b>File troppo lungo: ho letto ' + unita + ' 1–' + d.pagine + ' su ' + d.pagineTotali + '.</b><span>Per il resto carica un secondo file: così nessuna pagina resta fuori.</span></div>';
+  if (!n || (!P.dispensa && !P.test)) return h;
+  var manc = d.argomenti.filter(function (a, i) { return P.dispensa ? !d.capitoli[i] : !d.domande[i]; });
+  var range = function (l) { var r = []; l.forEach(function (a) { var u = r[r.length - 1]; if (u && a.da <= u[1] + 1) u[1] = Math.max(u[1], a.a); else r.push([a.da, a.a]); }); return r.map(function (x) { return x[0] + (x[1] > x[0] ? '–' + x[1] : ''); }).join(', '); };
+  var pl = function (k, uno, tanti) { return k + ' ' + (k === 1 ? uno : tanti); };
+  if (!manc.length) h += '<div class="cop ok"><b>✓ Copertura completa</b><span>' + (d.tipoPagine === 'parte' ? pl(d.pagine, 'parte letta', 'parti lette') : pl(d.pagine, 'pagina letta', 'pagine lette')) + ' → ' + (P.dispensa ? pl(n, 'capitolo', 'capitoli') : pl(n, 'argomento con le sue domande', 'argomenti con le loro domande')) + '. Ogni ' + (P.dispensa ? 'capitolo' : 'argomento') + ' indica da dove viene: tocca le pagine per vedere il testo originale.</span></div>';
+  else if (j && !j.errore) h += '<div class="cop lav"><b>In scrittura: ' + fatti + ' di ' + n + ' ' + cosa + '</b><span>Mancano ancora le ' + unita + ' ' + range(manc) + '.</span></div>';
+  else h += '<div class="cop wa"><b>Non ho finito: ' + fatti + ' di ' + n + ' ' + cosa + '</b><span>Mancano le ' + unita + ' ' + range(manc) + '. Il resto è già qui sotto.</span><button class="btn v small" data-riprendi="' + c.id + '">Completa le parti mancanti</button></div>';
+  return h;
+}
+function mostraPagina(c, d, n) {
+  var nome = d.tipoPagine === 'parte' ? 'Parte ' + n : 'Pagina ' + n;
+  sheet('<span class="lab">Dai tuoi appunti · ' + esc(c.file || 'testo incollato') + '</span><h2 style="font-size:22px">' + nome + '</h2><div id="pg-t" class="orig"><span class="spin"></span></div><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) {
+    r.querySelector('[data-close]').onclick = chiudiSheet;
+    api('/api/caricamento?uid=' + S.uid + '&cid=' + c.id + '&pagina=' + n).then(function (x) { var e = $('pg-t'); if (e) e.textContent = x.testo || '(pagina vuota)'; }).catch(function () { var e = $('pg-t'); if (e) e.textContent = 'Non riesco a caricare la pagina.'; });
+  });
+}
+
 // ---------- DISPENSA ----------
 function vDispensa(cid) {
   var v = $('v-dispensa'), c = S.caricamenti.find(function (x) { return x.id === cid; }); if (!c) return mostra('studia');
   var d = dispLocale(cid);
   if (!d) { v.innerHTML = '<div class="card"><span class="spin"></span></div>'; dispCarica(cid).then(function (x) { if (x && cur.view === 'dispensa') vDispensa(cid); else if (!x) v.innerHTML = '<div class="empty">Dispensa non trovata.</div>'; }); return; }
+  FONTI_VIS = { fonti: d.fonti || [], tipo: d.tipoPagine || 'pagina' };
   var j = JOBS[cid], m = materia(c.materiaId), h = '<button class="back" data-b>← ' + esc(m ? m.nome : 'Studia') + '</button><h1 class="h1" style="font-size:28px">' + esc(c.titolo || d.titolo) + '</h1>';
-  if (j) h += '<div class="dc lav"><div class="attesa">' + (j.errore ? '<b style="color:var(--kob)">Si è fermato: ' + esc(j.errore) + '</b>' : '<span class="spin"></span>' + esc(j.fase)) + '</div>' + fasi(j) + '<div class="bar"><i style="width:' + Math.round(j.fatti / Math.max(1, j.totali) * 100) + '%"></i></div></div>';
+  h += copertura(c, d, j);
+  if (j && !(j.errore && d.pagine)) h += '<div class="dc lav"><div class="attesa">' + (j.errore ? '<b style="color:var(--kob)">Si è fermato: ' + esc(j.errore) + '</b>' : '<span class="spin"></span>' + esc(j.fase)) + '</div>' + fasi(j) + '<div class="bar"><i style="width:' + Math.round(j.fatti / Math.max(1, j.totali) * 100) + '%"></i></div></div>';
   if (d.mappa && d.mappa.rami && d.mappa.rami.length) h += mappaHTML(d, c, partiDi(c).dispensa);
   var pp = partiDi(c);
   if (!pp.dispensa && d.argomenti.length) {
-    h += '<div class="paper"><span class="lab">Argomenti del testo</span>' + d.argomenti.map(function (a, i) { var nd = ((d.domande[i] || {}).crocette || []).length; return '<p style="margin:8px 0"><span class="n" style="display:inline-grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--blu);color:#fff;font-weight:700;font-size:13px;margin-right:8px">' + (i + 1) + '</span><b>' + esc(a.titolo) + '</b>' + (nd ? ' <span class="note">· ' + nd + ' domande</span>' : '') + '<br><span class="note">' + esc(a.descrizione || '') + '</span></p>'; }).join('') + '</div>';
+    h += '<div class="paper"><span class="lab">Argomenti del testo</span>' + d.argomenti.map(function (a, i) { var nd = ((d.domande[i] || {}).crocette || []).length; return '<p style="margin:8px 0"><span class="n" style="display:inline-grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--blu);color:#fff;font-weight:700;font-size:13px;margin-right:8px">' + (i + 1) + '</span><b>' + esc(a.titolo) + '</b>' + (a.da ? ' <button type="button" class="pp" data-pag="' + a.da + '">pp. ' + a.da + (a.a > a.da ? '–' + a.a : '') + '</button>' : '') + (nd ? ' <span class="note">· ' + nd + ' domande</span>' : '') + '<br><span class="note">' + esc(a.descrizione || '') + '</span></p>'; }).join('') + '</div>';
     if (!j) h += '<div class="row" style="gap:10px;flex-wrap:wrap">' + (!pp.test ? '<button class="btn small" data-agg="' + cid + ':test">+ Crea il test</button>' : '') + (!pp.mappa ? '<button class="btn small" data-agg="' + cid + ':mappa">+ Crea la mappa</button>' : '') + '<button class="btn ghost small" data-agg="' + cid + ':dispensa" style="color:var(--blu)">Crea la dispensa completa</button></div>';
   }
   if (pp.dispensa) d.argomenti.forEach(function (a, i) {
     var cp = d.capitoli[i];
-    if (!cp) { h += '<div class="paper c' + ((i % 6) + 1) + '" style="opacity:.75"><h3><span class="n">' + (i + 1) + '</span>' + esc(a.titolo) + '</h3><div class="attesa">' + (j && !j.errore ? '<span class="spin"></span>In scrittura…' : 'Non ancora scritto') + '</div></div>'; return; }
-    h += '<div class="paper c' + ((i % 6) + 1) + '" id="cap' + i + '"><h3><span class="n">' + (i + 1) + '</span>' + esc(cp.titolo) + '</h3>';
+    if (!cp) { h += '<div class="paper c' + ((i % 6) + 1) + '" style="opacity:.75"><h3><span class="n">' + (i + 1) + '</span>' + esc(a.titolo) + '</h3>' + (a.da ? '<span class="note">pp. ' + a.da + (a.a > a.da ? '–' + a.a : '') + '</span>' : '') + '<div class="attesa">' + (j && !j.errore ? '<span class="spin"></span>In scrittura…' : 'Non ancora scritto') + '</div></div>'; return; }
+    h += '<div class="paper c' + ((i % 6) + 1) + '" id="cap' + i + '"><h3><span class="n">' + (i + 1) + '</span>' + esc(cp.titolo) + '</h3>' + (a.da ? '<button type="button" class="pp" data-pag="' + a.da + '">' + (d.tipoPagine === 'parte' ? 'Dalle parti ' : 'Dalle pagine ') + a.da + (a.a > a.da ? '–' + a.a : '') + ' dei tuoi appunti</button>' : '');
     cp.paragrafi.forEach(function (p, k) {
       var key = 'c' + i + 'p' + k, ap = d.approfondimenti[key];
       h += '<p>' + marca(p) + ' <button type="button" class="linkap' + (ap ? ' salvato' : '') + '" data-ap="' + key + '" data-cap="' + i + '" data-txt="' + esc(p.replace(/\[\[[gcru]\|([^\]]*)\]\]/g, '$1')) + '">' + (ap ? '✓ Approfondito' : '+ Approfondisci') + '</button></p>';
@@ -385,6 +414,8 @@ function vDispensa(cid) {
   v.querySelector('[data-b]').onclick = function () { mostra('studia'); };
   v.querySelectorAll('[data-ap]').forEach(function (b) { b.onclick = function () { approfondisci(c, d, b.dataset.ap, +b.dataset.cap, b.dataset.txt); }; });
   v.querySelectorAll('[data-fonte]').forEach(function (b) { b.onclick = function () { mostraFonte(d, +b.dataset.fonte); }; });
+  v.querySelectorAll('[data-pag]').forEach(function (b) { b.onclick = function () { mostraPagina(c, d, +b.dataset.pag); }; });
+  v.querySelectorAll('[data-riprendi]').forEach(function (b) { b.onclick = function () { if (!AI.accesa) return toast(PAUSA); delete JOBS[cid]; prepara(c); vDispensa(cid); }; });
   v.querySelectorAll('[data-agg]').forEach(function (b) { b.onclick = function () { aggiungiParte(b.dataset.agg); }; });
   var ver = v.querySelector('[data-ver]'); if (ver) ver.onclick = function () { avviaTest({ tipo: 'verifica', cid: cid }); };
   v.querySelector('[data-del]').onclick = function () {
@@ -450,7 +481,7 @@ function leggiFile(f) {
     return x[0].getDocument({ data: x[1] }).promise.then(function (doc) {
       var pagine = [], p = Promise.resolve();
       for (var i = 1; i <= doc.numPages; i++) (function (n) { p = p.then(function () { return doc.getPage(n).then(function (pg) { return pg.getTextContent(); }).then(function (tc) { pagine.push(tc.items.map(function (it) { return it.str + (it.hasEOL ? '\n' : ' '); }).join('')); }); }); })(i);
-      return p.then(function () { return { testo: pagine.join('\n\n').replace(/[ \t]+/g, ' '), pagine: doc.numPages }; });
+      return p.then(function () { return { testo: pagine.map(function (t, k) { return '[[PAGINA ' + (k + 1) + ']]\n' + t; }).join('\n\n').replace(/[ \t]+/g, ' '), pagine: doc.numPages }; });
     });
   });
 }
@@ -465,6 +496,7 @@ function mostraFonte(d, n) {
   var f = (d.fonti || []).find(function (x) { return x.n === n; }); if (!f) return;
   sheet('<span class="lab">Fonte [' + n + ']</span><h2 style="font-size:20px">' + esc(f.titolo) + '</h2>' + (f.sito ? '<span class="note">' + esc(f.sito) + (f.tipo ? ' · ' + esc(f.tipo) : '') + '</span>' : '') +
     (f.punti && f.punti.length ? '<div class="srcs"><span class="t">Cosa dice di utile</span>' + f.punti.map(function (p) { return '<span>• ' + esc(p) + '</span>'; }).join('') + '</div>' : '') +
+    '<span class="note">Trovata con la ricerca web' + (function () { var caps = d.argomenti.map(function (x, i) { return d.ricerca[i] && (d.ricerca[i].nums || []).indexOf(n) >= 0 ? 'cap. ' + (i + 1) : null; }).filter(Boolean); return caps.length ? ' · citata in ' + caps.join(', ') : ''; })() + '. Indirizzo controllato: è uno di quelli restituiti davvero dalla ricerca.</span>' +
     '<a class="btn" href="' + esc(f.url) + '" target="_blank" rel="noopener" style="text-decoration:none">Apri la fonte</a><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) { r.querySelector('[data-close]').onclick = chiudiSheet; });
 }
 function approfondisci(c, d, key, cap, testo) {

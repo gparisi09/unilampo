@@ -57,14 +57,20 @@ export default async (req) => {
         if (!d.capitoli[i]) { await passo("capitolo", { indice: i }); pronti++; L.fase = `Scrivo i capitoli · ${pronti} di ${n} pronti`; await salva(); }
         if (!d.domande[i]) await passo("domande", { indice: i });
       };
-      // il primo capitolo da solo (prepara la memoria condivisa degli appunti), poi gli altri insieme
-      await capEDom(0);
-      await aParti(idx.slice(1), 3, capEDom);
+      // ogni capitolo riceve solo le sue pagine: si scrivono 4 alla volta
+      await aParti(idx, 4, capEDom);
       d = await assembla(uid, cid);
+      for (let t = 0; t < 5 && d.argomenti.some((a, i) => !d.capitoli[i]); t++) { await new Promise((r) => setTimeout(r, 1500)); d = await assembla(uid, cid); }
+      const mancano = d.argomenti.map((a, i) => i).filter((i) => !d.capitoli[i]);
+      if (mancano.length) throw Object.assign(new Error("incompleta"), { codice: "incompleta" });
       if (!d.mappa) { L.fase = "Disegno la mappa…"; await salva(); await passo("mappa"); }
     } else {
       // solo test e/o mappa: direttamente dal testo caricato, modello economico, niente ricerca né capitoli
-      if (P.test) { L.fase = "Preparo le domande…"; await salva(); await aParti(idx.filter((i) => !d.domande[i]), 4, (i) => passo("domandeT", { indice: i })); }
+      if (P.test) {
+        L.fase = "Preparo le domande…"; await salva(); await aParti(idx.filter((i) => !d.domande[i]), 4, (i) => passo("domandeT", { indice: i }));
+        d = await assembla(uid, cid);
+        if (d.argomenti.some((a, i) => !d.domande[i])) throw Object.assign(new Error("incompleta"), { codice: "incompleta" });
+      }
       if (P.mappa && !d.mappa) { L.fase = "Disegno la mappa…"; await salva(); await passo("mappaT"); }
     }
     L.fase = "Dispensa pronta"; L.fine = true; L.fatti = L.totali; await salva();

@@ -1,6 +1,7 @@
 import { store, json, uidOk, idOk, sha, aiAccesa, puoSpendere, registraSpesa } from "./base.mjs";
 import { chiedi, leggiJSON } from "./claude.mjs";
 import { assembla, leggiMeta, salvaMeta, salvaPezzo } from "./dispensa.mjs";
+import { fetta, numeroPagine } from "./pagine.mjs";
 import { ECONOMICO, COSTOSO, USCITA, MAX_ARGOMENTI, RICERCHE_PER_ARGOMENTO, MAX_FONTI_PER_ARGOMENTO, RICERCHE_APPROFONDISCI, stimaPassaggio } from "./regole.mjs";
 
 // Un passaggio di generazione per chiamata.
@@ -15,19 +16,24 @@ const MARCATORI = `Usa questi segni nel testo, con misura (al massimo 2-3 per pa
 [[c|parole]] definizione (evidenziata in celeste)
 [[r|parole]] attenzione, errore frequente (evidenziato in rosa)
 [[u|parole]] formula o regola da sapere a memoria (sottolineata)
-Per citare una fonte scrivi il suo numero tra parentesi quadre, es. [2]. Non usare HTML, asterischi o markdown.`;
+Per citare una fonte scrivi il suo numero tra parentesi quadre, es. [2]. Per citare una pagina degli appunti scrivi [p.12] (o [p.12-13]).
+Non usare HTML, asterischi o markdown.`;
 
 const FORMATO = `Formato della risposta: SOLO un oggetto JSON valido, senza testo prima o dopo e senza blocchi di codice. Dentro i testi non usare mai le virgolette doppie ": per le citazioni usa « » oppure l'apostrofo.`;
 
 const ONESTA = `Regole di onestà, obbligatorie:
 - Non inventare dati, numeri, date, autori, articoli di legge o fonti.
-- Ogni informazione presa dalle fonti va citata con il suo numero. Le informazioni che vengono solo dagli appunti non hanno numero.
+- Ogni informazione presa dalle fonti va citata con il suo numero; ogni informazione presa dagli appunti cita la sua pagina, es. [p.7] (le pagine sono segnate nel testo come [[PAGINA 7]]).
 - Se appunti e fonti non bastano per dire qualcosa con sicurezza, non dirlo.`;
 
 const P = {
-  argomenti: `Sei un tutor universitario italiano. Ricevi gli appunti di una studentessa per una materia.
-Individua gli argomenti principali trattati (al massimo ${MAX_ARGOMENTI}), nell'ordine in cui compaiono. Non aggiungere argomenti che negli appunti non ci sono.
-Rispondi SOLO con JSON: {"titolo": "titolo breve della lezione", "argomenti": [{"titolo": "...", "descrizione": "una frase"}]}`,
+  argomenti: `Sei un tutor universitario italiano. Ricevi gli appunti (o la dispensa) di una studentessa per una materia. Il testo è diviso in pagine segnate così: [[PAGINA 7]].
+Dividi TUTTO il testo in argomenti, nell'ordine in cui compaiono, come i capitoli di un libro:
+- copri ogni pagina dalla prima all'ultima, senza saltarne nessuna: ogni pagina deve stare in un argomento;
+- un argomento ogni 2-3 pagine circa: il numero giusto è indicato sotto; segui i titoli e i cambi di tema del testo;
+- per ognuno: titolo, una frase che dice cosa contiene, pagina di inizio ("da") e di fine ("a");
+- non aggiungere argomenti che nel testo non ci sono.
+Rispondi SOLO con JSON: {"titolo": "titolo breve della lezione o del documento", "argomenti": [{"titolo": "...", "descrizione": "una frase", "da": 1, "a": 3}]}`,
 
   ricerca: `Sei un ricercatore che verifica appunti universitari. Cerca sul web fonti AFFIDABILI sull'argomento indicato, nell'ambito della materia indicata.
 Fonti valide, in ordine di preferenza: manuali e dispense universitarie, pagine di università, enciclopedie (es. Treccani, Britannica, Stanford Encyclopedia of Philosophy), siti istituzionali, articoli scientifici o di riviste accademiche. Evita blog, forum, siti di appunti condivisi, contenuti commerciali.
@@ -35,12 +41,13 @@ Scegli al massimo ${MAX_FONTI_PER_ARGOMENTO} fonti tra quelle che hai davvero tr
 Per ogni fonte riporta da 2 a 4 punti brevi (massimo 20 parole): cosa dice di utile sull'argomento, con parole tue, fedeli alla fonte. Niente che la fonte non dica.
 Rispondi SOLO con JSON: {"fonti": [{"url": "...", "titolo": "...", "sito": "nome del sito", "tipo": "manuale|università|enciclopedia|istituzionale|articolo", "punti": ["..."]}]}`,
 
-  capitolo: `Sei un docente universitario italiano che scrive una dispensa di studio chiara e fedele, a partire dagli appunti della studentessa (nel contesto) e dalle fonti verificate che ricevi.
-Scrivi il capitolo sull'argomento indicato:
-- spiega in modo semplice ma da livello universitario, in 3 paragrafi brevi (al massimo 70 parole ciascuno);
-- parti dagli appunti; usa le fonti per completare, correggere e confermare;
+  capitolo: `Sei un docente universitario italiano che scrive una dispensa di studio chiara e FEDELE, a partire dalle pagine degli appunti della studentessa e dalle fonti verificate che ricevi.
+Scrivi il capitolo sull'argomento indicato, usando TUTTE le pagine che ricevi:
+- ogni concetto, definizione, elenco, autore, data o formula presente in quelle pagine deve comparire: non tagliare parti;
+- da 3 a 7 paragrafi (al massimo 90 parole ciascuno): più pagine e più concetti, più paragrafi;
+- spiega in modo semplice ma da livello universitario; parti dagli appunti e cita la pagina [p.N]; usa le fonti per completare, correggere e confermare, citandole [N];
 - un esempio concreto, una trappola (errore tipico all'esame), una cosa da ricordare: al massimo 35 parole ciascuno;
-- confronta appunti e fonti in al massimo 3 voci brevi (25 parole): cosa coincide ("ok"), cosa manca negli appunti ("incompleto"), cosa negli appunti è diverso dalle fonti ("diverso"). Ogni voce cita le fonti.
+- confronta appunti e fonti in al massimo 3 voci brevi (25 parole): cosa coincide ("ok"), cosa manca negli appunti ("incompleto"), cosa negli appunti è diverso dalle fonti ("diverso"). Ogni voce cita pagina e fonte.
 ${MARCATORI}
 ${ONESTA}
 Rispondi SOLO con JSON: {"titolo": "...", "paragrafi": ["..."], "esempio": "...", "trappola": "...", "ricorda": "...", "confronto": [{"tipo": "ok|incompleto|diverso", "testo": "..."}], "collegati": ["titoli di altri argomenti dell'elenco collegati a questo"]}`,
@@ -107,6 +114,26 @@ const crocetteOk = (v, n) => (Array.isArray(v) ? v : []).slice(0, n).map((q) => 
   fonte: s(q && q.fonte, 30),
 })).filter((q) => q.testo && q.opzioni.length === 4);
 
+// Ogni pagina deve finire in un argomento: si ordinano gli intervalli e si chiudono i buchi.
+// Un argomento senza pagine valide si appoggia al successivo; un argomento troppo lungo si divide in parti.
+function coperturaCompleta(lista, nPag) {
+  let a = lista.map((x) => ({ ...x, da: Math.max(1, Math.min(nPag, x.da || 0)), a: Math.max(1, Math.min(nPag, x.a || 0)) }))
+    .map((x) => (x.a < x.da ? { ...x, a: x.da } : x)).sort((x, y) => x.da - y.da || x.a - y.a);
+  if (!a.length) a = [{ titolo: "Appunti", descrizione: "", da: 1, a: nPag }];
+  a[0].da = 1;
+  for (let k = 1; k < a.length; k++) { if (a[k].da > a[k - 1].a + 1) a[k - 1].a = a[k].da - 1; if (a[k].da <= a[k - 1].a && a[k].a <= a[k - 1].a && a.length > 1) { /* contenuto in quello prima: va bene, si sovrappone */ } }
+  a[a.length - 1].a = Math.max(a[a.length - 1].a, nPag);
+  // nessun capitolo oltre 6 pagine: si divide (resta fedele, solo più capitoli)
+  const out = [];
+  for (const x of a) {
+    const lung = x.a - x.da + 1, pezzi = Math.ceil(lung / 6);
+    if (pezzi <= 1) { out.push(x); continue; }
+    const passo = Math.ceil(lung / pezzi);
+    for (let k = 0; k < pezzi; k++) { const da = x.da + k * passo, fine = Math.min(x.a, da + passo - 1); if (da <= fine) out.push({ titolo: `${x.titolo} (${k + 1}/${pezzi})`, descrizione: x.descrizione, da, a: fine }); }
+  }
+  return out.slice(0, 30);
+}
+
 // Esegue un passaggio e restituisce la risposta HTTP (la usano /api/genera e la preparazione in background).
 export async function esegui(b) {
   const { uid, cid, passo } = b || {};
@@ -132,10 +159,14 @@ export async function esegui(b) {
   // i capitoli citano le fonti con numeri che valgono per tutta la dispensa: prima servono tutte le ricerche
   if (passo === "capitolo" && d.argomenti.some((a, k) => !d.ricerca[k])) return json({ error: "prima le fonti" }, 409);
   if (passo === "approfondisci" && !/^[a-z0-9]{1,20}$/.test(String(b.chiave || ""))) return json({ error: "bad" }, 400);
+  const nPag = numeroPagine(testo) || 1;
+  const pezzoDi = (a) => fetta(testo, a.da || 1, a.a || nPag);
+  const suo = arg && (passo === "capitolo" || passo === "domandeT") ? pezzoDi(arg) : "";
+  const testoMappa = testo.slice(0, 120000);
   const stima = stimaPassaggio(passo, {
-    caratteri: ["argomenti", "capitolo", "domandeT", "mappaT"].includes(passo) ? testo.length : 0,
+    caratteri: passo === "argomenti" ? testo.length : passo === "mappaT" ? testoMappa.length : suo ? suo.length : 0,
     ricerche: passo === "ricerca" ? RICERCHE_PER_ARGOMENTO : passo === "approfondisci" ? RICERCHE_APPROFONDISCI : 0,
-    cacheLetta: passo === "capitolo" && i > 0,
+    cacheLetta: false,
   });
   const cap = await puoSpendere(stima.usd);
   if (!cap.ok) return json({ error: "tetto", speso: cap.speso, tetto: cap.tetto }, 429);
@@ -143,21 +174,22 @@ export async function esegui(b) {
   // --- cache condivisa: stesso input, stessa risposta, nessuna spesa
   const fonti = d.fonti || [];
   const fontiTesto = (nums) => fonti.filter((f) => !nums || nums.includes(f.n)).map((f) => `[${f.n}] ${f.titolo} (${f.sito || f.url})\n${(f.punti || []).map((p) => "- " + p).join("\n")}`).join("\n\n") || "(nessuna fonte trovata)";
-  const titoliArg = (d.argomenti || []).map((a, k) => `${k + 1}. ${a.titolo}`).join("\n");
+  const titoliArg = (d.argomenti || []).map((a, k) => `${k + 1}. ${a.titolo}` + (a.da ? ` (pp. ${a.da}-${a.a})` : "")).join("\n");
   let chiaveCache, chiamata;
 
   try {
     if (passo === "argomenti") {
       chiaveCache = "arg/" + (await sha(testo));
-      chiamata = { modello: ECONOMICO, istruzioni: P.argomenti, testo: `Materia: ${s(d.materia, 120)}\n\nAPPUNTI:\n${testo}`, max: USCITA.argomenti };
+      const quanti = Math.max(2, Math.min(MAX_ARGOMENTI, Math.round(nPag / 2.5)));
+      chiamata = { modello: ECONOMICO, istruzioni: P.argomenti, testo: `Materia: ${s(d.materia, 120)}\nPagine: da 1 a ${nPag}. Argomenti da individuare: circa ${quanti} (da ${Math.max(1, quanti - 2)} a ${Math.min(MAX_ARGOMENTI, quanti + 3)}).\n\nAPPUNTI:\n${testo}`, max: USCITA.argomenti };
     } else if (passo === "ricerca") {
       chiaveCache = "ric/" + (await sha(d.materia + "|" + arg.titolo + "|" + arg.descrizione));
       chiamata = { modello: ECONOMICO, istruzioni: P.ricerca, testo: `Materia: ${s(d.materia, 120)}\nArgomento: ${arg.titolo}\nDi cosa parla negli appunti: ${arg.descrizione}`, max: USCITA.ricerca, ricerche: RICERCHE_PER_ARGOMENTO };
     } else if (passo === "capitolo") {
       const mie = (d.ricerca[i] && d.ricerca[i].nums) || [];
-      chiaveCache = "cap/" + (await sha(testo + "|" + arg.titolo + "|" + JSON.stringify(mie.map((n) => fonti.find((f) => f.n === n)))));
-      chiamata = { modello: COSTOSO, istruzioni: P.capitolo, fisso: `APPUNTI DELLA STUDENTESSA (materia: ${s(d.materia, 120)}):\n${testo}`, cache: true,
-        testo: `Elenco degli argomenti della lezione:\n${titoliArg}\n\nScrivi il capitolo ${i + 1}: ${arg.titolo}\n\nFONTI VERIFICATE PER QUESTO ARGOMENTO:\n${fontiTesto(mie)}`, max: USCITA.capitolo };
+      chiaveCache = "cap2/" + (await sha(suo + "|" + arg.titolo + "|" + JSON.stringify(mie.map((n) => fonti.find((f) => f.n === n)))));
+      chiamata = { modello: COSTOSO, istruzioni: P.capitolo,
+        testo: `Materia: ${s(d.materia, 120)}\nElenco degli argomenti della lezione:\n${titoliArg}\n\nScrivi il capitolo ${i + 1}: ${arg.titolo} (pagine ${arg.da}-${arg.a})\n\nPAGINE DEGLI APPUNTI PER QUESTO CAPITOLO:\n${suo}\n\nFONTI VERIFICATE PER QUESTO ARGOMENTO:\n${fontiTesto(mie)}`, max: USCITA.capitolo };
     } else if (passo === "mappa") {
       const caps = (d.argomenti || []).map((a, k) => d.capitoli[k] ? `${k + 1}. ${d.capitoli[k].titolo}: ${(d.capitoli[k].paragrafi || []).join(" ").slice(0, 600)}` : "").filter(Boolean).join("\n\n");
       if (!caps) return json({ error: "prima i capitoli" }, 400);
@@ -170,11 +202,11 @@ export async function esegui(b) {
       chiaveCache = "dom/" + (await sha(corpo));
       chiamata = { modello: ECONOMICO, istruzioni: P.domande, testo: `Materia: ${s(d.materia, 120)}\n\nCAPITOLO:\n${corpo}\n\nFONTI:\n${fontiTesto()}`, max: USCITA.domande };
     } else if (passo === "domandeT") {
-      chiaveCache = "domT/" + (await sha(testo + "|" + arg.titolo));
-      chiamata = { modello: ECONOMICO, istruzioni: P.domandeT, testo: `Materia: ${s(d.materia, 120)}\nArgomento: ${arg.titolo} (${arg.descrizione})\n\nTESTO:\n${testo}`, max: USCITA.domandeT };
+      chiaveCache = "domT2/" + (await sha(suo + "|" + arg.titolo));
+      chiamata = { modello: ECONOMICO, istruzioni: P.domandeT, testo: `Materia: ${s(d.materia, 120)}\nArgomento: ${arg.titolo} (${arg.descrizione}), pagine ${arg.da}-${arg.a}\n\nTESTO DI QUESTE PAGINE:\n${suo}`, max: USCITA.domandeT };
     } else if (passo === "mappaT") {
-      chiaveCache = "mapT/" + (await sha(testo));
-      chiamata = { modello: ECONOMICO, istruzioni: P.mappaT, testo: `Materia: ${s(d.materia, 120)}\nArgomenti:\n${titoliArg}\n\nTESTO:\n${testo}`, max: USCITA.mappaT };
+      chiaveCache = "mapT2/" + (await sha(testoMappa + titoliArg));
+      chiamata = { modello: ECONOMICO, istruzioni: P.mappaT, testo: `Materia: ${s(d.materia, 120)}\nArgomenti:\n${titoliArg}\n\nTESTO:\n${testoMappa}`, max: USCITA.mappaT };
     } else if (passo === "approfondisci") {
       const chiave = s(b.chiave, 80), parte = s(b.parte, 2500), cap = d.capitoli[Math.max(0, Number(b.capitolo) || 0)];
       if (!chiave || !parte) return json({ error: "bad" }, 400);
@@ -222,7 +254,7 @@ export async function esegui(b) {
     if (passo === "argomenti") {
       const m = await leggiMeta(uid, cid);
       m.titolo = s(o.titolo, 120) || m.titolo;
-      m.argomenti = (Array.isArray(o.argomenti) ? o.argomenti : []).slice(0, MAX_ARGOMENTI).map((a) => ({ titolo: s(a && a.titolo, 120), descrizione: s(a && a.descrizione, 300) })).filter((a) => a.titolo);
+      m.argomenti = coperturaCompleta((Array.isArray(o.argomenti) ? o.argomenti : []).slice(0, MAX_ARGOMENTI).map((a) => ({ titolo: s(a && a.titolo, 120), descrizione: s(a && a.descrizione, 300), da: Number(a && a.da) || 0, a: Number(a && a.a) || 0 })).filter((a) => a.titolo), nPag);
       await salvaMeta(uid, cid, m);
       dato = { titolo: m.titolo, argomenti: m.argomenti };
     } else if (passo === "ricerca") {

@@ -21,20 +21,21 @@ export const COSTOSO = "claude-sonnet-5-5";
 export const TETTO_GIORNO = 3.0;
 
 // Ricerca web: argomenti per caricamento, ricerche e fonti per argomento.
-export const MAX_ARGOMENTI = 6;
+export const MAX_ARGOMENTI = 20; // il numero vero dipende dalle pagine: circa uno ogni 2-3 pagine
 export const RICERCHE_PER_ARGOMENTO = 1;
 export const MAX_FONTI_PER_ARGOMENTO = 3;
 export const RICERCHE_APPROFONDISCI = 1;
 
-// Appunti: oltre questa lunghezza si tagliano (tiene il prompt sotto la soglia dei prezzi più alti).
-export const MAX_CARATTERI_APPUNTI = 60000;
+// Appunti: oltre questa lunghezza (circa 150-200 pagine) si tagliano a fine pagina e la dispensa lo dice chiaramente.
+// Ogni capitolo riceve solo le sue pagine: il costo cresce con il numero di capitoli, non con la lunghezza intera.
+export const MAX_CARATTERI_APPUNTI = 400000;
 
 // Token massimi in uscita per ogni passaggio (fanno anche da base della stima).
 // Margine ampio: si pagano solo i token davvero scritti, e una risposta tagliata a metà sarebbe illeggibile.
-export const USCITA = { argomenti: 1200, ricerca: 1800, capitolo: 2600, mappa: 2000, domande: 3200, approfondisci: 2200, orale: 900 , domandeT: 3200, mappaT: 2000 };
+export const USCITA = { argomenti: 3000, ricerca: 1800, capitolo: 3600, mappa: 2000, domande: 3200, approfondisci: 2200, orale: 900 , domandeT: 3200, mappaT: 2000 };
 
 // Stima dei token in ingresso che non dipendono dagli appunti (istruzioni, fonti, risultati della ricerca).
-export const INGRESSO_FISSO = { argomenti: 500, ricerca: 1500, capitolo: 2500, mappa: 3000, domande: 3500, approfondisci: 3500, orale: 1500 , domandeT: 800, mappaT: 600 };
+export const INGRESSO_FISSO = { argomenti: 700, ricerca: 1500, capitolo: 2500, mappa: 3000, domande: 3500, approfondisci: 3500, orale: 1500 , domandeT: 800, mappaT: 600 };
 export const TOKEN_PER_RICERCA = 7000; // i risultati di una ricerca web entrano nel prompt: stima prudente
 
 export const CARATTERI_PER_TOKEN = 3; // prudente per l'italiano
