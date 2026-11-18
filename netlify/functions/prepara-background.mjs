@@ -1,6 +1,7 @@
 import { store, uidOk, idOk } from "../lib/base.mjs";
 import { esegui } from "../lib/passi.mjs";
-import { assembla, base } from "../lib/dispensa.mjs";
+import { assembla, base, leggiMeta } from "../lib/dispensa.mjs";
+import { avvisa } from "../lib/avvisi.mjs";
 
 // Prepara tutta la dispensa sul server, in background (fino a 15 minuti):
 // continua anche se la studentessa chiude l'app. L'avanzamento si salva in "lavori" e l'app lo legge quando torna.
@@ -53,9 +54,12 @@ export default async (req) => {
     d = await assembla(uid, cid);
     if (!d.mappa) { L.fase = "Disegno la mappa…"; await salva(); await passo("mappa"); }
     L.fase = "Dispensa pronta"; L.fine = true; L.fatti = L.totali; await salva();
+    const m = await leggiMeta(uid, cid).catch(() => null);
+    await avvisa(uid, "Dispensa pronta ✓", (m && m.titolo) || "La tua dispensa è pronta: aprila e inizia a studiare.", "/?d=" + cid).catch(() => {});
   } catch (e) {
     L.errore = (e && e.codice) || "errore"; L.dove = L.fase; await salva();
     console.error("prepara", cid, L.errore);
+    if (L.errore !== "tetto" && L.errore !== "spenta") await avvisa(uid, "Preparazione ferma", "Apri UniLampo e premi «Riprendi da dove si è fermata».", "/?d=" + cid).catch(() => {});
   }
 };
 export const config = { path: "/api/prepara", background: true };

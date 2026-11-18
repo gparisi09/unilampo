@@ -18,7 +18,7 @@ export const COSTOSO = "claude-sonnet-5-5";
 
 // Tetto di spesa giornaliero (dollari, perché Anthropic fattura in dollari). Dal pannello si può alzare solo per oggi.
 // Arrivati qui, la generazione si ferma fino a domani. Il limite mensile è quello impostato nella console Anthropic.
-export const TETTO_GIORNO = 1.0;
+export const TETTO_GIORNO = 3.0;
 
 // Ricerca web: argomenti per caricamento, ricerche e fonti per argomento.
 export const MAX_ARGOMENTI = 6;

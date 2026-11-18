@@ -113,6 +113,7 @@ function vStudia() {
   if (due.length) h += '<button class="giallo" data-rip><span>Ripassa le ' + due.length + (due.length === 1 ? ' domanda sbagliata' : ' domande sbagliate') + '</span><span class="fr">→</span></button>';
   h += '<label class="up"><input type="file" id="up-file" accept=".pdf,.txt,.md,application/pdf,text/plain"><span class="plus">+</span><span><b>Carica appunti</b><span>PDF o testo · la dispensa si prepara da sola</span></span></label>';
   h += '<button class="linkap" data-incolla style="align-self:center">oppure incolla il testo</button>';
+  h += boxNotifiche();
   if (car.length) h += '<div class="sez">Dispense <small>' + car.length + '</small></div>';
   car.forEach(function (c) { h += cartaDispensa(c); });
   if (!car.length) h += '<div class="empty"><b>Nessuna dispensa per ' + esc(m.nome) + '</b><span>Carica il primo PDF di appunti: in circa un minuto hai capitoli spiegati, mappa a colori, fonti e domande.</span></div>';
@@ -123,6 +124,7 @@ function vStudia() {
   var r = v.querySelector('[data-rip]'); if (r) r.onclick = function () { avviaTest({ tipo: 'ripasso', mid: m.id }); };
   $('up-file').onchange = function (e) { var f = e.target.files[0]; if (f) caricaFile(m, f); e.target.value = ''; };
   v.querySelector('[data-incolla]').onclick = function () { incolla(m); };
+  var nb = v.querySelector('[data-notif]'); if (nb) nb.onclick = attivaNotifiche;
   v.querySelector('[data-codice]').onclick = schedaCodice;
   v.querySelectorAll('[data-apri]').forEach(function (b) { b.onclick = function () { mostra('dispensa', b.dataset.apri); }; });
   v.querySelectorAll('[data-test]').forEach(function (b) { b.onclick = function () { avviaTest({ tipo: 'verifica', cid: b.dataset.test }); }; });
@@ -574,8 +576,42 @@ function vOrale() {
   var g = $('o-go'); if (g) g.onclick = function () { $('o-box').style.cssText = ''; iniziaOrale(m.id, dom[Math.floor(Math.random() * dom.length)]); };
 }
 
+// ---------- notifiche (app aggiunta alla schermata Home) ----------
+function inHome() { return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
+function statoNotifiche() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return inHome() ? 'no' : 'installa';
+  if (!AI.vapid) return 'no';
+  if (Notification.permission === 'granted') return S.notifiche ? 'attive' : 'da-attivare';
+  if (Notification.permission === 'denied') return 'negate';
+  return 'da-attivare';
+}
+function chiaveB64(b) { var p = '='.repeat((4 - b.length % 4) % 4), r = atob((b + p).replace(/-/g, '+').replace(/_/g, '/')), o = new Uint8Array(r.length); for (var i = 0; i < r.length; i++) o[i] = r.charCodeAt(i); return o; }
+function iscrivi() {
+  return navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription().then(function (s) { return s || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chiaveB64(AI.vapid) }); }); })
+    .then(function (sub) { return api('/api/notifiche', { uid: S.uid, sub: sub.toJSON() }); });
+}
+function attivaNotifiche() {
+  Notification.requestPermission().then(function (p) {
+    if (p !== 'granted') { toast('Notifiche non attivate: puoi riattivarle dalle impostazioni del telefono.'); rerender(); return; }
+    return iscrivi().then(function () { S.notifiche = true; salva(); toast('Fatto: ti avviso quando una dispensa è pronta'); rerender(); });
+  }).catch(function () { toast('Non riesco ad attivare le notifiche.'); });
+}
+function boxNotifiche() {
+  var st = statoNotifiche();
+  if (st === 'da-attivare') return '<button class="dc" data-notif style="flex-direction:row;align-items:center;gap:12px;text-align:left;border:2px solid var(--navy);cursor:pointer;color:var(--ink)"><span style="font-size:24px">🔔</span><span><b style="font-size:15px">Avvisami quando la dispensa è pronta</b><br><span class="note">Una notifica sul telefono, anche ad app chiusa</span></span></button>';
+  if (st === 'installa') return '<div class="note" style="text-align:center">Per ricevere una notifica quando la dispensa è pronta, aggiungi UniLampo alla schermata Home.</div>';
+  if (st === 'negate') return '<div class="note" style="text-align:center">Le notifiche sono bloccate: attivale dalle impostazioni del telefono per essere avvisata.</div>';
+  return '';
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function () {});
+
 // ---------- avvio ----------
-leggiStato().then(function () { rerender(); });
+leggiStato().then(function () {
+  rerender();
+  if (S.notifiche && 'Notification' in window && Notification.permission === 'granted' && AI.vapid) iscrivi().catch(function () {});
+});
+var daNotifica = (location.search.match(/[?&]d=([a-z0-9-]{4,60})/) || [])[1];
+if (daNotifica) { history.replaceState(null, '', '/'); setTimeout(function () { if (S.caricamenti.some(function (c) { return c.id === daNotifica; })) mostra('dispensa', daNotifica); }, 300); }
 // Al rientro nell'app ricarica in silenzio le dispense dal server (servono a test, orale e ripasso).
 S.caricamenti.forEach(function (c) {
   dispCarica(c.id).then(function (d) {
