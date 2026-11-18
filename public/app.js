@@ -148,6 +148,71 @@ function segnaLetto(cid, i) {
   salva();
 }
 
+// ---------- CERCA in tutte le dispense ----------
+function pulito(t) { return String(t || '').replace(/\[\[[gcru]\|([^\]]*)\]\]/g, '$1').replace(/\s*\[p\.[^\]]*\]|\s*\[\d+\]/g, '').replace(/\s+/g, ' ').trim(); }
+function senzaAccenti(t) { return t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function indiceRicerca() { // [{cid, tipo, dove, testo, cap, k}]
+  var out = [];
+  S.caricamenti.forEach(function (c) {
+    var d = dispLocale(c.id); if (!d) return;
+    var mat = (materia(c.materiaId) || {}).nome || '', tit = c.titolo || d.titolo || '';
+    var add = function (tipo, dove, testo, cap, k) { testo = pulito(testo); if (testo) out.push({ cid: c.id, mat: mat, disp: tit, tipo: tipo, dove: dove, testo: testo, cap: cap, k: k }); };
+    Object.keys(d.capitoli || {}).forEach(function (i) {
+      var cp = d.capitoli[i], nome = 'Cap. ' + (+i + 1) + ' · ' + cp.titolo;
+      add('Titolo', nome, cp.titolo, +i, -1);
+      (cp.paragrafi || []).forEach(function (p, k) { add('Capitolo', nome, p, +i, k); });
+      if (cp.esempio) add('Esempio', nome, cp.esempio, +i, 'es');
+      if (cp.trappola) add('Trappola', nome, cp.trappola, +i, 'tr');
+      if (cp.ricorda) add('Da ricordare', nome, cp.ricorda, +i, 'rem');
+    });
+    if (d.mappa) (d.mappa.rami || []).forEach(function (r, n) { add('Mappa', 'Mappa · ' + r.titolo, r.titolo + ': ' + r.testo + ' · ' + (r.foglie || []).join(' · '), 'mappa', n); });
+    Object.keys(d.approfondimenti || {}).forEach(function (key) { var a = d.approfondimenti[key]; (a.paragrafi || []).forEach(function (p) { add('Approfondimento', 'Approfondimento · ' + a.titolo, p, a.capitolo || 0, -1); }); });
+    Object.keys(d.domande || {}).forEach(function (i) { ((d.domande[i] || {}).crocette || []).forEach(function (q) { add('Domanda', 'Domanda · ' + titoloCap(c.id, +i), q.testo + ' → ' + q.opzioni[q.giusta], +i, -1); }); });
+    if (!partiDi(c).dispensa) (d.argomenti || []).forEach(function (a, i) { add('Argomento', 'Argomento ' + (i + 1), a.titolo + ': ' + (a.descrizione || ''), 'top', -1); });
+  });
+  return out;
+}
+function trova(q) {
+  var parole = senzaAccenti(q).split(/\s+/).filter(function (w) { return w.length > 1; }); if (!parole.length) return [];
+  return indiceRicerca().map(function (x) {
+    var t = senzaAccenti(x.testo), ok = parole.every(function (w) { return t.indexOf(w) >= 0; }); if (!ok) return null;
+    var punti = parole.reduce(function (s, w) { return s + (t.split(w).length - 1); }, 0) + (x.tipo === 'Titolo' ? 5 : x.tipo === 'Mappa' ? 2 : 0);
+    return { x: x, punti: punti };
+  }).filter(Boolean).sort(function (a, b) { return b.punti - a.punti; }).slice(0, 40).map(function (r) { return r.x; });
+}
+function evidenzia(testo, q) {
+  var parole = senzaAccenti(q).split(/\s+/).filter(function (w) { return w.length > 1; }), t = senzaAccenti(testo), primo = -1;
+  parole.forEach(function (w) { var i = t.indexOf(w); if (i >= 0 && (primo < 0 || i < primo)) primo = i; });
+  var da = Math.max(0, primo - 60); if (da) { var sp = testo.indexOf(' ', da); if (sp > 0 && sp < primo) da = sp + 1; }
+  var pezzo = (da ? '…' : '') + testo.slice(da, da + 200) + (testo.length > da + 200 ? '…' : ''), tp = senzaAccenti(pezzo), out = '', i = 0;
+  var segni = []; parole.forEach(function (w) { var j = 0; while ((j = tp.indexOf(w, j)) >= 0) { segni.push([j, j + w.length]); j += w.length; } });
+  segni.sort(function (a, b) { return a[0] - b[0]; });
+  segni.forEach(function (s) { if (s[0] < i) return; out += esc(pezzo.slice(i, s[0])) + '<mark>' + esc(pezzo.slice(s[0], s[1])) + '</mark>'; i = s[1]; });
+  return out + esc(pezzo.slice(i));
+}
+function apriCerca(iniziale) {
+  Promise.all(S.caricamenti.map(function (c) { return dispLocale(c.id) ? null : dispCarica(c.id).catch(function () {}); }));
+  sheet('<h2 style="font-size:22px">Cerca nelle tue dispense</h2><div class="cerca-in"><span>🔍</span><input id="q" type="search" placeholder="es. elasticità, contratto, Freud…" autocomplete="off" value="' + esc(iniziale || '') + '"></div><div id="q-ris" class="q-ris"></div><button class="btn ghost" data-close style="color:var(--blu2)">Chiudi</button>', function (r) {
+    r.querySelector('[data-close]').onclick = chiudiSheet;
+    var i = $('q'), mostraRis = function () {
+      var q = i.value.trim(), box = $('q-ris'); if (!box) return;
+      if (q.length < 2) { box.innerHTML = '<span class="note">Cerca una parola o un concetto in capitoli, mappe, approfondimenti e domande di tutte le materie.</span>'; return; }
+      var ris = trova(q);
+      box.innerHTML = ris.length ? '<span class="note">' + ris.length + (ris.length === 40 ? '+' : '') + ' risultati</span>' + ris.map(function (x, n) { return '<button class="q-r" data-n="' + n + '"><span class="q-dove"><b>' + esc(x.mat) + '</b> · ' + esc(x.disp) + '</span><span class="q-t">' + esc(x.dove) + ' <i>' + x.tipo + '</i></span><span class="q-s">' + evidenzia(x.testo, q) + '</span></button>'; }).join('') : '<div class="empty" style="padding:18px"><b>Nessun risultato</b><span>Prova con un\'altra parola o con meno parole.</span></div>';
+      box.querySelectorAll('[data-n]').forEach(function (b) { b.onclick = function () { vaiA(ris[+b.dataset.n]); }; });
+    };
+    i.oninput = function () { clearTimeout(i.t); i.t = setTimeout(mostraRis, 120); };
+    mostraRis(); setTimeout(function () { i.focus(); }, 150);
+  });
+}
+function vaiA(x) {
+  chiudiSheet(); mostra('dispensa', x.cid);
+  setTimeout(function () {
+    var el = x.cap === 'mappa' ? (document.querySelector('#v-dispensa .node[data-k="' + x.k + '"]') || document.querySelector('#v-dispensa .paper.mappa')) : x.cap === 'top' ? document.querySelector('#v-dispensa .paper') : (typeof x.k === 'number' && x.k >= 0 ? $('c' + x.cap + 'p' + x.k) : null) || $('cap' + x.cap);
+    if (!el) return; el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.remove('lampo'); void el.offsetWidth; el.classList.add('lampo');
+  }, 120);
+}
+
 // ---------- STUDIA ----------
 function vStudia() {
   var v = $('v-studia'), m = materiaCorrente(), h = '';
@@ -160,6 +225,7 @@ function vStudia() {
   }
   var st = statMateria(m.id), car = carDi(m.id).slice().reverse(), nq = domandeMateria(m.id).length, due = daRipassare(m.id);
   h += barraMaterie(true);
+  if (S.caricamenti.length) h += '<button type="button" class="cerca" data-cerca><span>🔍</span>Cerca in tutte le dispense</button>';
   h += '<div class="hero"><div class="flex"><span class="lab">Materia</span></div><h2>' + esc(m.nome) + '<button class="ed" type="button" data-ed aria-label="Modifica nome">' + MATITA + '</button></h2>' +
     '<div class="stat"><div><b>' + (st.pct === null ? '–' : st.pct + '%') + '</b><span>risposte giuste</span></div><div><b>' + (function (k) { return k + '</b><span>' + (k === 1 ? 'dispensa' : 'dispense'); })(car.filter(function (c) { return c.stato === 'pronta'; }).length) + '</span></div><div><b>' + nq + '</b><span>' + (nq === 1 ? 'domanda' : 'domande') + '</span></div></div></div>';
   h += boxPiano(m);
@@ -174,6 +240,7 @@ function vStudia() {
   legaMaterie(v);
   v.querySelector('[data-ed]').onclick = function () { schedaMateria(m); };
   legaPiano(v, m);
+  var cb = v.querySelector('[data-cerca]'); if (cb) cb.onclick = function () { apriCerca(); };
   $('up-file').onchange = function (e) { var f = e.target.files[0]; if (f) caricaFile(m, f); e.target.value = ''; };
   v.querySelector('[data-incolla]').onclick = function () { incolla(m); };
   var nb = v.querySelector('[data-notif]'); if (nb) nb.onclick = attivaNotifiche;
@@ -446,7 +513,7 @@ function vDispensa(cid) {
     h += '<div class="paper c' + ((i % 6) + 1) + '" id="cap' + i + '"><h3><span class="n">' + (i + 1) + '</span>' + esc(cp.titolo) + '</h3>' + (a.da ? '<button type="button" class="pp" data-pag="' + a.da + '">' + (d.tipoPagine === 'parte' ? 'Dalle parti ' : 'Dalle pagine ') + a.da + (a.a > a.da ? '–' + a.a : '') + ' dei tuoi appunti</button>' : '');
     cp.paragrafi.forEach(function (p, k) {
       var key = 'c' + i + 'p' + k, ap = d.approfondimenti[key];
-      h += '<p>' + marca(p) + ' <button type="button" class="linkap' + (ap ? ' salvato' : '') + '" data-ap="' + key + '" data-cap="' + i + '" data-txt="' + esc(p.replace(/\[\[[gcru]\|([^\]]*)\]\]/g, '$1')) + '">' + (ap ? '✓ Approfondito' : '+ Approfondisci') + '</button></p>';
+      h += '<p id="c' + i + 'p' + k + '">' + marca(p) + ' <button type="button" class="linkap' + (ap ? ' salvato' : '') + '" data-ap="' + key + '" data-cap="' + i + '" data-txt="' + esc(p.replace(/\[\[[gcru]\|([^\]]*)\]\]/g, '$1')) + '">' + (ap ? '✓ Approfondito' : '+ Approfondisci') + '</button></p>';
       if (ap) h += boxApp(ap);
     });
     if (cp.esempio) h += '<div class="box es"><span class="t">Esempio</span>' + marca(cp.esempio) + '</div>';
