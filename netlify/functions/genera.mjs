@@ -16,6 +16,8 @@ const MARCATORI = `Usa questi segni nel testo, con misura (al massimo 2-3 per pa
 [[u|parole]] formula o regola da sapere a memoria (sottolineata)
 Per citare una fonte scrivi il suo numero tra parentesi quadre, es. [2]. Non usare HTML, asterischi o markdown.`;
 
+const FORMATO = `Formato della risposta: SOLO un oggetto JSON valido, senza testo prima o dopo e senza blocchi di codice. Dentro i testi non usare mai le virgolette doppie ": per le citazioni usa « » oppure l'apostrofo.`;
+
 const ONESTA = `Regole di onestà, obbligatorie:
 - Non inventare dati, numeri, date, autori, articoli di legge o fonti.
 - Ogni informazione presa dalle fonti va citata con il suo numero. Le informazioni che vengono solo dagli appunti non hanno numero.
@@ -162,10 +164,18 @@ export default async (req) => {
 
     let out = chiaveCache ? await cache.get(chiaveCache, { type: "json" }).catch(() => null) : null, usd = 0;
     if (!out) {
+      chiamata.istruzioni += "\n\n" + FORMATO;
       const r = await chiedi(chiamata);
       usd = r.usd;
       await registraSpesa(passo, usd, r.ricerche);
-      out = { o: leggiJSON(r.text), trovate: r.trovate };
+      let o;
+      try { o = leggiJSON(r.text); } catch (e) {
+        const motivo = r.stop === "max_tokens" ? "risposta troppo lunga, tagliata" : "risposta non leggibile";
+        console.error("parse", passo, r.stop, r.text.slice(0, 400));
+        await store("config").setJSON("ultimoErrore", { quando: new Date().toISOString(), passo, status: 200, motivo, dettaglio: (r.stop + " · " + r.text.slice(0, 260)) }).catch(() => {});
+        throw e;
+      }
+      out = { o, trovate: r.trovate };
       if (chiaveCache) await cache.setJSON(chiaveCache, out);
     }
     const o = out.o || {};

@@ -30,13 +30,18 @@ export async function chiedi({ modello, istruzioni, fisso = "", cache = false, t
       for (const x of c.content) if (x && x.url) trovate.push({ url: x.url, titolo: String(x.title || "").slice(0, 200) });
   }
   const text = (d.content || []).filter((c) => c.type === "text").map((c) => c.text).join("").trim();
-  return { text, trovate, usd: costoDaUso(modello, u, nRicerche), ricerche: nRicerche };
+  return { text, trovate, usd: costoDaUso(modello, u, nRicerche), ricerche: nRicerche, stop: d.stop_reason || "" };
 }
 
-// Estrae il primo oggetto JSON dalla risposta.
+// Estrae l'oggetto JSON dalla risposta, anche se è dentro ```json o ha piccoli difetti.
 export function leggiJSON(t) {
-  const s = String(t || "");
-  const a = s.indexOf("{"), b = s.lastIndexOf("}");
+  let x = String(t || "").replace(/```(?:json)?/gi, "");
+  const a = x.indexOf("{"), b = x.lastIndexOf("}");
   if (a < 0 || b <= a) throw new Error("parse");
-  return JSON.parse(s.slice(a, b + 1));
+  x = x.slice(a, b + 1);
+  try { return JSON.parse(x); } catch {}
+  // virgole in più prima di ] o }, a capo dentro le stringhe
+  const y = x.replace(/,\s*([\]}])/g, "$1").replace(/[\u2028\u2029]/g, " ");
+  try { return JSON.parse(y); } catch {}
+  throw new Error("parse");
 }
