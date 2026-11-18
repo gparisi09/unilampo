@@ -10,11 +10,25 @@ export async function chiedi({ modello, istruzioni, fisso = "", cache = false, t
   if (fisso) system.push(cache ? { type: "text", text: fisso, cache_control: { type: "ephemeral" } } : { type: "text", text: fisso });
   const body = { model: modello, max_tokens: max, system, messages: [{ role: "user", content: testo }] };
   if (ricerche > 0) body.tools = [{ type: "web_search_20250305", name: "web_search", max_uses: ricerche, blocked_domains: DOMINI_ESCLUSI }];
-  const r = await fetch(URL_API, {
-    method: "POST",
-    headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  // I modelli 5.5 "pensano" di base e il pensiero consuma max_tokens: la risposta arrivava vuota (stop max_tokens)
+  // e si pagava il pensiero. Qui il pensiero preliminare si spegne: Haiku "disabled", Sonnet "between_tools" (il minimo).
+  // Con la ricerca web Haiku resta col pensiero (senza rischia di saltare la ricerca), ma con molto più spazio.
+  if (/haiku/.test(modello)) { if (ricerche > 0) body.max_tokens = Math.max(max, 8000); else body.thinking = { type: "disabled" }; }
+  else if (/sonnet/.test(modello)) body.thinking = { type: "between_tools" };
+  // Errori passeggeri (sovraccarico, limiti al minuto, rete): si riprova da soli, aspettando sempre di più.
+  let r = null, ultimo = null;
+  for (let t = 0; t < 4; t++) {
+    if (t) await new Promise((ok) => setTimeout(ok, [0, 4000, 12000, 30000][t]));
+    try {
+      r = await fetch(URL_API, {
+        method: "POST",
+        headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (e) { ultimo = e; r = null; continue; }
+    if (r.ok || ![408, 409, 429, 500, 502, 503, 504, 529].includes(r.status)) break;
+  }
+  if (!r) { const e = new Error("upstream"); e.status = 503; e.dettaglio = String(ultimo && ultimo.message || "rete").slice(0, 200); throw e; }
   if (!r.ok) {
     const e = new Error("upstream"); e.status = r.status;
     try { e.dettaglio = (await r.text()).slice(0, 300); } catch {}

@@ -1,6 +1,6 @@
 import { store, uidOk, idOk } from "../lib/base.mjs";
 import { esegui } from "../lib/passi.mjs";
-import { assembla, base, leggiMeta, salvaMeta } from "../lib/dispensa.mjs";
+import { assembla, base, leggiMeta, salvaMeta, salvaPezzo } from "../lib/dispensa.mjs";
 import { avvisa } from "../lib/avvisi.mjs";
 
 // Prepara tutta la dispensa sul server, in background (fino a 15 minuti):
@@ -29,9 +29,16 @@ export default async (req) => {
 
   const L = { parti: P, fase: "Leggo gli argomenti…", fatti: 0, totali: 10, errore: "", dove: "", fine: false, inizio: Date.now(), conta: { argomenti: 0, fonti: 0, capitoli: 0, domande: 0, mappa: 0, n: 0 } };
   const salva = () => st.setJSON(k, { ...L, agg: Date.now() }).catch(() => {});
+  // Ogni passaggio si riprova da solo fino a 3 volte prima di arrendersi (tranne AI spenta e tetto: lì riprovare non serve).
   const passo = async (nome, extra) => {
-    const r = await esegui({ uid, cid, passo: nome, materia: b.materia, ...extra });
-    const j = await r.json().catch(() => ({}));
+    let r, j;
+    for (let t = 0; t < 3; t++) {
+      if (t) await new Promise((ok) => setTimeout(ok, t * 8000));
+      r = await esegui({ uid, cid, passo: nome, materia: b.materia, ...extra });
+      j = await r.json().catch(() => ({}));
+      if (r.ok || ["spenta", "tetto", "bad", "nessun caricamento"].includes(j.error)) break;
+      console.error("riprovo il passaggio", nome, extra && extra.indice, j.error);
+    }
     if (!r.ok) { const e = new Error(j.error || "errore"); e.codice = j.error || "errore"; throw e; }
     L.fatti++; L.conta[{ argomenti: "argomenti", ricerca: "fonti", capitolo: "capitoli", domande: "domande", domandeT: "domande", mappa: "mappa", mappaT: "mappa" }[nome]]++; await salva();
     return j;
@@ -48,7 +55,13 @@ export default async (req) => {
     L.fatti = 1 + (P.dispensa ? L.conta.fonti + L.conta.capitoli : 0) + (conDomande ? L.conta.domande : 0) + (conMappa ? L.conta.mappa : 0);
     if (P.dispensa) {
       L.fase = `Cerco fonti affidabili per ${n} ${n === 1 ? "argomento" : "argomenti"}…`; await salva();
-      await aParti(idx.filter((i) => !d.ricerca[i]), 4, (i) => passo("ricerca", { indice: i }));
+      // Se per un argomento la ricerca proprio non riesce, il capitolo si scrive dagli appunti (e lo dice: "nessuna fonte trovata").
+      let stopR = null;
+      await aParti(idx.filter((i) => !d.ricerca[i]), 4, (i) => passo("ricerca", { indice: i }).catch(async (e) => {
+        if (e.codice === "tetto" || e.codice === "spenta") { stopR = e; return; }
+        await salvaPezzo(uid, cid, "ricerca/" + i, { fonti: [], data: new Date().toISOString(), saltata: true });
+      }));
+      if (stopR) throw stopR;
       d = await assembla(uid, cid);
       for (let t = 0; t < 5 && d.argomenti.some((a, i) => !d.ricerca[i]); t++) { await new Promise((r) => setTimeout(r, 1500)); d = await assembla(uid, cid); }
       L.fase = "Scrivo i capitoli…"; await salva();
@@ -57,12 +70,20 @@ export default async (req) => {
         if (!d.capitoli[i]) { await passo("capitolo", { indice: i }); pronti++; L.fase = `Scrivo i capitoli · ${pronti} di ${n} pronti`; await salva(); }
         if (!d.domande[i]) await passo("domande", { indice: i });
       };
-      // ogni capitolo riceve solo le sue pagine: si scrivono 4 alla volta
-      await aParti(idx, 4, capEDom);
+      // ogni capitolo riceve solo le sue pagine: si scrivono 4 alla volta.
+      // Un capitolo che non riesce non ferma gli altri: alla fine si ritenta, poi si dice quali mancano.
+      const falliti = [], stop = { e: null };
+      const prova = (i) => capEDom(i).catch((e) => { if (e.codice === "tetto" || e.codice === "spenta") stop.e = e; falliti.push(i); });
+      await aParti(idx, 4, prova);
+      if (stop.e) throw stop.e;
+      if (falliti.length) { const ancora = falliti.splice(0); await aParti(ancora, 2, prova); if (stop.e) throw stop.e; }
       d = await assembla(uid, cid);
       for (let t = 0; t < 5 && d.argomenti.some((a, i) => !d.capitoli[i]); t++) { await new Promise((r) => setTimeout(r, 1500)); d = await assembla(uid, cid); }
       const mancano = d.argomenti.map((a, i) => i).filter((i) => !d.capitoli[i]);
-      if (mancano.length) throw Object.assign(new Error("incompleta"), { codice: "incompleta" });
+      if (mancano.length) { // la mappa si fa comunque con i capitoli pronti, poi si dice cosa manca
+        if (!d.mappa && Object.keys(d.capitoli).length) { L.fase = "Disegno la mappa…"; await salva(); await passo("mappa").catch(() => {}); }
+        throw Object.assign(new Error("incompleta"), { codice: "incompleta" });
+      }
       if (!d.mappa) { L.fase = "Disegno la mappa…"; await salva(); await passo("mappa"); }
     } else {
       // solo test e/o mappa: direttamente dal testo caricato, modello economico, niente ricerca né capitoli
