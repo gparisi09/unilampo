@@ -33,15 +33,38 @@ export async function chiedi({ modello, istruzioni, fisso = "", cache = false, t
   return { text, trovate, usd: costoDaUso(modello, u, nRicerche), ricerche: nRicerche, stop: d.stop_reason || "" };
 }
 
-// Estrae l'oggetto JSON dalla risposta, anche se è dentro ```json o ha piccoli difetti.
+// Estrae l'oggetto JSON dalla risposta. Se la risposta è stata tagliata a metà,
+// tiene tutto ciò che è completo e chiude le parentesi: meglio 5 domande su 6 che nessuna.
 export function leggiJSON(t) {
   let x = String(t || "").replace(/```(?:json)?/gi, "");
-  const a = x.indexOf("{"), b = x.lastIndexOf("}");
-  if (a < 0 || b <= a) throw new Error("parse");
-  x = x.slice(a, b + 1);
-  try { return JSON.parse(x); } catch {}
-  // virgole in più prima di ] o }, a capo dentro le stringhe
-  const y = x.replace(/,\s*([\]}])/g, "$1").replace(/[\u2028\u2029]/g, " ");
-  try { return JSON.parse(y); } catch {}
+  const a = x.indexOf("{");
+  if (a < 0) throw new Error("parse");
+  x = x.slice(a);
+  const b = x.lastIndexOf("}");
+  for (const y of [b > 0 ? x.slice(0, b + 1) : null, b > 0 ? x.slice(0, b + 1).replace(/,\s*([\]}])/g, "$1") : null]) {
+    if (!y) continue;
+    try { return JSON.parse(y); } catch {}
+  }
+  return ripara(x);
+}
+function ripara(x) {
+  const pila = [], punti = [];
+  let inStr = false, esc = false;
+  for (let i = 0; i < x.length; i++) {
+    const c = x[i];
+    if (inStr) {
+      if (esc) esc = false; else if (c === "\\") esc = true;
+      else if (c === '"') { inStr = false; if (pila[pila.length - 1] === "[") punti.push([i + 1, pila.slice()]); }
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{" || c === "[") pila.push(c);
+    else if (c === "}" || c === "]") { pila.pop(); punti.push([i + 1, pila.slice()]); }
+  }
+  for (let k = punti.length - 1; k >= 0; k--) {
+    const [fine, p] = punti[k];
+    const chiudi = p.slice().reverse().map((c) => (c === "{" ? "}" : "]")).join("");
+    try { const o = JSON.parse(x.slice(0, fine).replace(/,\s*$/, "") + chiudi); if (o && typeof o === "object") return o; } catch {}
+  }
   throw new Error("parse");
 }

@@ -1,4 +1,4 @@
-import { store, json, chiavePropria, aiAccesa, controllaPin, oggi } from "../lib/base.mjs";
+import { store, json, chiavePropria, aiAccesa, controllaPin, oggi, tettoOggi } from "../lib/base.mjs";
 import * as R from "../lib/regole.mjs";
 
 // Pannello del titolare (/pannello): stato AI, interruttore, spesa e tester. Tutto dietro il PIN.
@@ -12,6 +12,12 @@ export default async (req) => {
   if (b.azione === "interruttore") {
     if (b.accesa === true && !chiavePropria()) return json({ error: "nochiave" }, 409);
     await store("config").setJSON("ai", { accesa: b.accesa === true, quando: new Date().toISOString() });
+  }
+
+  if (b.azione === "tetto+") {
+    const k = "extra/" + oggi(), x = (await store("config").get(k, { type: "json" }).catch(() => null)) || { usd: 0 };
+    if (x.usd + 1 > R.EXTRA_MAX_GIORNO) return json({ error: "maxextra" }, 409);
+    await store("config").setJSON(k, { usd: x.usd + 1, quando: new Date().toISOString() });
   }
 
   // spesa: oggi e ultimi 7 giorni
@@ -39,7 +45,7 @@ export default async (req) => {
   const ultimoErrore = await store("config").get("ultimoErrore", { type: "json" }).catch(() => null);
   return json({
     ultimoErrore,
-    accesa: await aiAccesa(), chiave: chiavePropria(), tetto: R.TETTO_GIORNO, oggi: og, giorni, tester,
+    accesa: await aiAccesa(), chiave: chiavePropria(), tetto: await tettoOggi(), tettoBase: R.TETTO_GIORNO, extraMax: R.EXTRA_MAX_GIORNO, oggi: og, giorni, tester,
     regole: { ECONOMICO: R.ECONOMICO, COSTOSO: R.COSTOSO, PREZZI: R.PREZZI, PREZZO_RICERCA: R.PREZZO_RICERCA, MAX_FONTI_PER_ARGOMENTO: R.MAX_FONTI_PER_ARGOMENTO, RICERCHE_PER_ARGOMENTO: R.RICERCHE_PER_ARGOMENTO, MAX_ARGOMENTI: R.MAX_ARGOMENTI },
   });
 };

@@ -25,7 +25,7 @@ function errore(e) {
 }
 function carica(extra) {
   return chiama(extra).then(function (d) { try { sessionStorage.setItem('ul-pin', PIN); } catch (e) {} disegna(d); return d; })
-    .catch(function (e) { if (e && (e.error === 'pin' || e.error === 'troppi' || e.error === 'nopin')) { try { sessionStorage.removeItem('ul-pin'); } catch (x) {} PIN = ''; accesso(errore(e)); } else if (e && e.error === 'nochiave') toast('Manca la chiave Anthropic su Netlify.'); else toast(errore(e)); });
+    .catch(function (e) { if (e && (e.error === 'pin' || e.error === 'troppi' || e.error === 'nopin')) { try { sessionStorage.removeItem('ul-pin'); } catch (x) {} PIN = ''; accesso(errore(e)); } else if (e && e.error === 'nochiave') toast('Manca la chiave Anthropic su Netlify.'); else if (e && e.error === 'maxextra') toast('Oggi il tetto è già al massimo.'); else toast(errore(e)); });
 }
 var GRUPPI = [
   { nome: 'Dispense e mappe', nota: 'modello avanzato', voci: ['capitolo', 'mappa'] },
@@ -44,7 +44,10 @@ function disegna(d) {
   h += '<div class="card"><div class="flex"><div><span class="lab">Generatore AI</span><br><b style="font-size:19px">' + (d.accesa ? 'Acceso' : 'Spento') + '</b></div><span class="sw' + (d.accesa ? ' on' : '') + '"></span></div>' +
     '<button class="btn' + (d.accesa ? ' v' : '') + '" id="sw">' + (d.accesa ? 'Spegni il generatore' : 'Accendi il generatore') + '</button>' +
     '<span class="note">Spento: chi usa l\'app vede “in pausa”, ma dispense già pronte, test e ripasso funzionano.</span>' +
-    '<div class="flex" style="margin-top:6px"><span class="lab">Oggi</span><b>' + dollari(o.usd) + ' di ' + dollari(d.tetto) + '</b></div><div class="bar"><i class="' + (pct >= 80 ? 'low' : '') + '" style="width:' + pct + '%"></i></div><table class="est">';
+    '<div class="flex" style="margin-top:6px"><span class="lab">Oggi</span><b>' + dollari(o.usd) + ' di ' + dollari(d.tetto) + '</b></div><div class="bar"><i class="' + (pct >= 80 ? 'low' : '') + '" style="width:' + pct + '%"></i></div>' +
+    (pct >= 80 ? '<div class="box tr"><span class="t">Tetto quasi raggiunto</span>Arrivati al tetto la preparazione delle dispense si ferma fino a domani.</div>' : '') +
+    (d.tetto < d.tettoBase + d.extraMax ? '<button class="btn ghost small" id="piu" style="color:var(--blu)">Alza il tetto di 1 dollaro, solo per oggi</button>' : '<span class="note">Tetto di oggi già alzato al massimo.</span>') +
+    (d.tetto > d.tettoBase ? '<span class="note">Tetto normale ' + dollari(d.tettoBase) + ', oggi alzato a ' + dollari(d.tetto) + '. Domani torna normale.</span>' : '') + '<table class="est">';
   GRUPPI.forEach(function (g) {
     var usd = 0, ch = 0, ric = 0;
     g.voci.forEach(function (v) { var x = o.voci[v]; if (x) { usd += x.usd; ch += x.chiamate; ric += x.ricerche || 0; } });
@@ -76,6 +79,7 @@ function disegna(d) {
   $('v').innerHTML = h;
   $('sw').onclick = function () { this.disabled = true; carica({ azione: 'interruttore', accesa: !d.accesa }).then(function (x) { if (x) toast(x.accesa ? 'Generatore acceso' : 'Generatore spento'); }); };
   $('agg').onclick = function () { carica(); };
+  var piu = $('piu'); if (piu) piu.onclick = function () { piu.disabled = true; carica({ azione: 'tetto+' }).then(function (x) { if (x) toast('Tetto di oggi: ' + dollari(x.tetto)); }); };
   $('esci').onclick = function () { try { sessionStorage.removeItem('ul-pin'); } catch (e) {} PIN = ''; accesso(); };
 }
 if (PIN) carica(); else accesso();

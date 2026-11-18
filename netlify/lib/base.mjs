@@ -41,9 +41,13 @@ export async function registraSpesa(voce, usd, ricerche = 0) {
   await st.setJSON(k, g);
   return g;
 }
+export async function tettoOggi() {
+  const x = await store("config").get("extra/" + oggi(), { type: "json" }).catch(() => null);
+  return Math.round((TETTO_GIORNO + ((x && x.usd) || 0)) * 100) / 100;
+}
 export async function puoSpendere(stima) {
-  const g = await spesaOggi();
-  return { ok: g.usd + stima <= TETTO_GIORNO, speso: g.usd, tetto: TETTO_GIORNO };
+  const g = await spesaOggi(), t = await tettoOggi();
+  return { ok: g.usd + stima <= t, speso: g.usd, tetto: t };
 }
 
 // PIN del pannello: confronto e blocco dopo troppi tentativi sbagliati.

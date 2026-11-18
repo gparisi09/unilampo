@@ -32,15 +32,15 @@ Rispondi SOLO con JSON: {"titolo": "titolo breve della lezione", "argomenti": [{
   ricerca: `Sei un ricercatore che verifica appunti universitari. Cerca sul web fonti AFFIDABILI sull'argomento indicato, nell'ambito della materia indicata.
 Fonti valide, in ordine di preferenza: manuali e dispense universitarie, pagine di università, enciclopedie (es. Treccani, Britannica, Stanford Encyclopedia of Philosophy), siti istituzionali, articoli scientifici o di riviste accademiche. Evita blog, forum, siti di appunti condivisi, contenuti commerciali.
 Scegli al massimo ${MAX_FONTI_PER_ARGOMENTO} fonti tra quelle che hai davvero trovato con la ricerca: copia l'indirizzo esatto.
-Per ogni fonte riporta da 2 a 5 punti: cosa dice di utile sull'argomento, con parole tue, fedeli alla fonte. Niente che la fonte non dica.
+Per ogni fonte riporta da 2 a 4 punti brevi (massimo 20 parole): cosa dice di utile sull'argomento, con parole tue, fedeli alla fonte. Niente che la fonte non dica.
 Rispondi SOLO con JSON: {"fonti": [{"url": "...", "titolo": "...", "sito": "nome del sito", "tipo": "manuale|università|enciclopedia|istituzionale|articolo", "punti": ["..."]}]}`,
 
   capitolo: `Sei un docente universitario italiano che scrive una dispensa di studio chiara e fedele, a partire dagli appunti della studentessa (nel contesto) e dalle fonti verificate che ricevi.
 Scrivi il capitolo sull'argomento indicato:
-- spiega in modo semplice ma da livello universitario, in 3-5 paragrafi brevi;
+- spiega in modo semplice ma da livello universitario, in 3 paragrafi brevi (al massimo 70 parole ciascuno);
 - parti dagli appunti; usa le fonti per completare, correggere e confermare;
-- un esempio concreto, una trappola (errore tipico all'esame), una cosa da ricordare;
-- confronta appunti e fonti: cosa coincide ("ok"), cosa manca negli appunti ("incompleto"), cosa negli appunti è diverso dalle fonti ("diverso"). Ogni voce cita le fonti.
+- un esempio concreto, una trappola (errore tipico all'esame), una cosa da ricordare: al massimo 35 parole ciascuno;
+- confronta appunti e fonti in al massimo 3 voci brevi (25 parole): cosa coincide ("ok"), cosa manca negli appunti ("incompleto"), cosa negli appunti è diverso dalle fonti ("diverso"). Ogni voce cita le fonti.
 ${MARCATORI}
 ${ONESTA}
 Rispondi SOLO con JSON: {"titolo": "...", "paragrafi": ["..."], "esempio": "...", "trappola": "...", "ricorda": "...", "confronto": [{"tipo": "ok|incompleto|diverso", "testo": "..."}], "collegati": ["titoli di altri argomenti dell'elenco collegati a questo"]}`,
@@ -50,13 +50,13 @@ Ogni ramo: un titolo di poche parole e una frase brevissima (massimo 12 parole),
 Rispondi SOLO con JSON: {"centro": "...", "rami": [{"titolo": "...", "testo": "...", "capitolo": 1}]}`,
 
   domande: `Sei un docente universitario che prepara l'esame. Dal capitolo che ricevi crea:
-- 8 domande a crocette con 4 alternative, una sola giusta, alternative sbagliate plausibili; per ognuna una spiegazione breve del perché la giusta è giusta e perché l'errore più probabile è sbagliato;
-- 2 domande per l'orale, ognuna con 3-5 punti chiave che una risposta completa deve toccare.
+- 6 domande a crocette con 4 alternative brevi (massimo 12 parole), una sola giusta, alternative sbagliate plausibili; per ognuna una spiegazione di massimo 30 parole;
+- 2 domande per l'orale, ognuna con 3-4 punti chiave brevi (massimo 10 parole) che una risposta completa deve toccare.
 Le domande devono basarsi solo su ciò che il capitolo dice. Nel campo "fonte" metti il numero della fonte tra parentesi quadre se l'informazione viene da una fonte, altrimenti "appunti".
 Rispondi SOLO con JSON: {"crocette": [{"testo": "...", "opzioni": ["...","...","...","..."], "giusta": 0, "spiegazione": "...", "fonte": "[1]"}], "orali": [{"domanda": "...", "punti": ["..."]}]}`,
 
   approfondisci: `Sei un docente universitario. La studentessa ha toccato "Approfondisci" su una parte della sua dispensa. Spiegala più a fondo:
-- 2-4 paragrafi di spiegazione più profonda;
+- 2-3 paragrafi di spiegazione più profonda (massimo 80 parole ciascuno);
 - 1-2 esempi concreti;
 - collegamenti con altri argomenti della stessa materia (scegli solo dall'elenco che ricevi, se pertinenti);
 - 3 domande a crocette su questo approfondimento, con spiegazione.
@@ -170,7 +170,7 @@ export async function esegui(b) {
       try { o = leggiJSON(r.text); } catch {}
       if (!o) {
         console.error("riprovo più corto", passo, r.stop, r.text.slice(0, 300));
-        const corta = { ...chiamata, ricerche: 0, max: Math.round(chiamata.max * 1.5),
+        const corta = { ...chiamata, modello: ECONOMICO, cache: false, ricerche: 0, max: Math.round(chiamata.max * 1.5),
           istruzioni: chiamata.istruzioni + "\n\nIMPORTANTE: la risposta precedente era troppo lunga o non valida. Sii molto più sintetico: frasi brevi, al massimo la metà dei testi, e chiudi sempre il JSON." };
         if (passo === "ricerca" || passo === "approfondisci") corta.testo = chiamata.testo + "\n\nRISULTATI GIÀ TROVATI (usa solo questi indirizzi):\n" + (r.trovate || []).map((t) => `- ${t.titolo}: ${t.url}`).join("\n");
         const r2 = await chiedi(corta);

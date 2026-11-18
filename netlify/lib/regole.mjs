@@ -16,13 +16,13 @@ export const PREZZO_RICERCA = 0.01; // dollari per ricerca web
 export const ECONOMICO = "claude-haiku-5-5";
 export const COSTOSO = "claude-sonnet-5-5";
 
-// Tetto di spesa giornaliero (dollari, perché Anthropic fattura in dollari).
+// Tetto di spesa giornaliero (dollari, perché Anthropic fattura in dollari). Dal pannello si può alzare solo per oggi.
 // Arrivati qui, la generazione si ferma fino a domani. Il limite mensile è quello impostato nella console Anthropic.
 export const TETTO_GIORNO = 1.0;
 
 // Ricerca web: argomenti per caricamento, ricerche e fonti per argomento.
 export const MAX_ARGOMENTI = 6;
-export const RICERCHE_PER_ARGOMENTO = 2;
+export const RICERCHE_PER_ARGOMENTO = 1;
 export const MAX_FONTI_PER_ARGOMENTO = 3;
 export const RICERCHE_APPROFONDISCI = 1;
 
@@ -31,7 +31,7 @@ export const MAX_CARATTERI_APPUNTI = 60000;
 
 // Token massimi in uscita per ogni passaggio (fanno anche da base della stima).
 // Margine ampio: si pagano solo i token davvero scritti, e una risposta tagliata a metà sarebbe illeggibile.
-export const USCITA = { argomenti: 1500, ricerca: 2500, capitolo: 4000, mappa: 1500, domande: 5000, approfondisci: 3000, orale: 1200 };
+export const USCITA = { argomenti: 1200, ricerca: 1800, capitolo: 2600, mappa: 1000, domande: 3200, approfondisci: 2200, orale: 900 };
 
 // Stima dei token in ingresso che non dipendono dagli appunti (istruzioni, fonti, risultati della ricerca).
 export const INGRESSO_FISSO = { argomenti: 500, ricerca: 1500, capitolo: 2500, mappa: 3000, domande: 3500, approfondisci: 3500, orale: 1500 };
@@ -60,3 +60,4 @@ export function stimaPassaggio(passo, { caratteri = 0, ricerche = 0, cacheLetta 
   const usd = (ingresso + USCITA[passo] * p.out) / 1e6 + ricerche * PREZZO_RICERCA;
   return { modello, usd: Math.round(usd * 1e5) / 1e5 };
 }
+export const EXTRA_MAX_GIORNO = 3; // dollari in più che il pannello può aggiungere in un giorno
